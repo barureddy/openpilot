@@ -23,20 +23,20 @@ class CarInterface(CarInterfaceBase):
     ret.communityFeature = True
 
     # Speed conversion:              20, 45 mph
-    ret.wheelbase = 3.089  # in meters for Pacifica Hybrid 2017
+    ret.wheelbase = 2.76  # in meters for Jeep Cherokee KL
     ret.steerRatio = 16.2  # Pacifica Hybrid 2017
-    ret.mass = 2858. + STD_CARGO_KG  # kg curb weight Pacifica Hybrid 2017
-    ret.lateralTuning.pid.kpBP, ret.lateralTuning.pid.kiBP = [[9., 20.], [9., 20.]]
-    ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.15, 0.30], [0.03, 0.05]]
+    ret.mass = 2048 + STD_CARGO_KG  # kg curb weight Jeep Cherokee
+    ret.lateralTuning.pid.kpBP, ret.lateralTuning.pid.kiBP = [[0.], [0.]]
+    ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.4], [0.1]]
     ret.lateralTuning.pid.kf = 0.00006   # full torque for 10 deg at 80mph means 0.00007818594
     ret.steerActuatorDelay = 0.1
-    ret.steerRateCost = 0.7
+    ret.steerRateCost = 1.0
     ret.steerLimitTimer = 0.4
 
-    if candidate in (CAR.JEEP_CHEROKEE, CAR.JEEP_CHEROKEE_2019):
-      ret.wheelbase = 2.91  # in meters
-      ret.steerRatio = 12.7
-      ret.steerActuatorDelay = 0.2  # in seconds
+#    if candidate in (CAR.JEEP_CHEROKEE, CAR.JEEP_CHEROKEE_2019):
+#      ret.wheelbase = 2.91  # in meters
+#      ret.steerRatio = 12.7
+#      ret.steerActuatorDelay = 0.2  # in seconds
 
     ret.centerToFront = ret.wheelbase * 0.44
 
@@ -87,9 +87,8 @@ class CarInterface(CarInterfaceBase):
   # to be called @ 100hz
   def apply(self, c):
 
-    if (self.CS.frame == -1):
-      return []  # if we haven't seen a frame 220, then do not update.
-
-    can_sends = self.CC.update(c.enabled, self.CS, c.actuators, c.cruiseControl.cancel, c.hudControl.visualAlert)
-
+    can_sends = self.CC.update(c.enabled, self.CS, self.frame, c.actuators, c.cruiseControl.cancel,
+                               c.hudControl.leftLaneVisible, c.hudControl.rightLaneVisible)
+    self.frame += 1
+    
     return can_sends
