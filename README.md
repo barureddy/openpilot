@@ -1,4 +1,4 @@
-*My Attempt of Porting Openpilot to my 2016 KL Jeep Cherokee. Much of the changes are based on the following repository: https://github.com/Tundergit/openpilot
+My Attempt of Porting Openpilot to my 2016 KL Jeep Cherokee. Much of the changes are based on the following repository: https://github.com/Tundergit/openpilot
 
 [![](https://i.imgur.com/UelUjKAh.png)](#)
 
