@@ -5,10 +5,16 @@ from cereal import car
 Ecu = car.CarParams.Ecu
 
 class SteerLimitParams:
+  STEER_STEP = 1          # LKAS steering commands sent at 100Hz
+  HUD_STEP = 25           # HUD updates sent at 4Hz
+
   STEER_MAX = 261         # 262 faults
   STEER_DELTA_UP = 3      # 3 is stock. 100 is fine. 200 is too much it seems
   STEER_DELTA_DOWN = 3    # no faults on the way down it seems
   STEER_ERROR_MAX = 80
+  STEER_DRIVER_ALLOWANCE = 80
+  STEER_DRIVER_MULTIPLIER = 3    # weight driver torque heavily
+  STEER_DRIVER_FACTOR = 1        # from dbc
 
 
 class CAR:
