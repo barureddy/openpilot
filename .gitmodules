@@ -3,7 +3,7 @@
   url = ../../commaai/panda.git
 [submodule "opendbc"]
   path = opendbc_repo
-	url = ../../keulono13/opendbc.git
+  url = ../../barureddy/opendbc.git
 [submodule "msgq"]
   path = msgq_repo
   url = ../../commaai/msgq.git
