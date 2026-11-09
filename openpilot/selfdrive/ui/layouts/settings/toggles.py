@@ -18,6 +18,11 @@ DESCRIPTIONS = {
     "Your attention is required at all times to use this feature."
   ),
   "DisengageOnAccelerator": tr_noop("When enabled, pressing the accelerator pedal will disengage openpilot."),
+  "JvePilotAccControl": tr_noop(
+    "Use jvePilot hybrid speed control to automatically adjust your vehicle's Adaptive Cruise Control set speed " +
+    "for upcoming curves, traffic, and smooth Eco acceleration using virtual steering wheel cruise buttons. " +
+    "When disabled (default), the vehicle's stock Adaptive Cruise Control manages speed."
+  ),
   "LongitudinalPersonality": tr_noop(
     "Standard is recommended. In aggressive mode, openpilot will follow lead cars closer and be more aggressive with the gas and brake. " +
     "In relaxed mode openpilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
@@ -58,6 +63,12 @@ class TogglesLayout(Widget):
         lambda: tr("Disengage on Accelerator Pedal"),
         DESCRIPTIONS["DisengageOnAccelerator"],
         "disengage_on_accelerator.png",
+        False,
+      ),
+      "JvePilotAccControl": (
+        lambda: tr("jvePilot ACC Speed Control"),
+        DESCRIPTIONS["JvePilotAccControl"],
+        "speed_limit.png",
         False,
       ),
       "IsLdwEnabled": (
@@ -176,7 +187,7 @@ class TogglesLayout(Widget):
         # no long for now
         self._toggles["ExperimentalMode"].action_item.set_enabled(False)
         self._toggles["ExperimentalMode"].action_item.set_state(False)
-        self._long_personality_setting.action_item.set_enabled(False)
+        self._long_personality_setting.action_item.set_enabled(self._params.get_bool("JvePilotAccControl"))
         self._params.remove("ExperimentalMode")
 
         unavailable = tr("Experimental mode is currently unavailable on this car since the car's stock ACC is used for longitudinal control.")
@@ -238,6 +249,8 @@ class TogglesLayout(Widget):
       return
 
     self._params.put_bool(param, state, block=True)
+    if param == "JvePilotAccControl":
+      self._update_toggles()
     if self._toggle_defs[param][3]:
       self._params.put_bool("OnroadCycleRequested", True, block=True)
 

@@ -150,6 +150,7 @@ class Car:
     self.params.put("CarParamsPersistent", cp_bytes)
 
     self.v_cruise_helper = VCruiseHelper(self.CP)
+    self.v_cruise_helper.jve_acc_control = self.params.get_bool("JvePilotAccControl")
 
     self.is_metric = self.params.get_bool("IsMetric")
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
@@ -256,6 +257,7 @@ class Car:
     while not evt.is_set():
       self.is_metric = self.params.get_bool("IsMetric")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
+      self.v_cruise_helper.jve_acc_control = self.params.get_bool("JvePilotAccControl")
       time.sleep(0.1)
 
   def card_thread(self):

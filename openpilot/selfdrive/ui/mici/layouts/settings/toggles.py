@@ -54,6 +54,10 @@ class TogglesLayoutMici(NavScroller):
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
+    jve_acc_toggle = BigParamControl("jvePilot ACC speed control", "JvePilotAccControl",
+                                     description="Automatically adjust stock ACC set speed for curves,\n" +
+                                                 "traffic, and smooth Eco acceleration.\n" +
+                                                 "When off (default), stock ACC manages speed.")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")
@@ -72,6 +76,7 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
+      jve_acc_toggle,
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -83,6 +88,7 @@ class TogglesLayoutMici(NavScroller):
     # Toggle lists
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
+      ("JvePilotAccControl", jve_acc_toggle),
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),

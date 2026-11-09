@@ -34,6 +34,7 @@ class VCruiseHelper:
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.v_cruise_kph_last = 0
+    self.jve_acc_control = False
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
 
@@ -50,7 +51,7 @@ class VCruiseHelper:
         self._update_v_cruise_non_pcm(CS, enabled, is_metric)
         self.v_cruise_cluster_kph = self.v_cruise_kph
         self.update_button_timers(CS, enabled)
-      elif self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl:
+      elif self.jve_acc_control and self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl:
         # jvePilot hybrid ACC: while engaged, track driver's desired max cruise speed via physical
         # steering wheel buttons so CarController can modulate the car's actual ACC set speed below v_cruise_kph
         if not enabled or not CS.cruiseState.enabled or not self.v_cruise_initialized:
@@ -143,7 +144,7 @@ class VCruiseHelper:
         self.button_change_states[b.type.raw] = {"standstill": CS.cruiseState.standstill, "enabled": enabled}
 
   def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
-    if self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl and CS.cruiseState.speed > 0:
+    if self.jve_acc_control and self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl and CS.cruiseState.speed > 0:
       self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
       self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
       return

@@ -46,6 +46,7 @@ class Controls:
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -64,6 +65,8 @@ class Controls:
 
   def update(self):
     self.sm.update(15)
+    if self.sm.frame % 100 == 0:
+      self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
     if self.sm.updated["extrinsicsCalibration"]:
       self.pose_calibrator.feed_extrinsics_calibration(self.sm['extrinsicsCalibration'])
     if self.sm.updated["deviceMotion"]:
@@ -119,19 +122,22 @@ class Controls:
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
 
     # jvePilot hybrid ACC target speed (used by CarController to modulate stock ACC set speed via cruise buttons)
-    v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
-    if len(long_plan.speeds) > 0:
-      lookahead_idx = min(5, len(long_plan.speeds) - 1)
-      v_plan = min(float(long_plan.speeds[lookahead_idx]), float(CS.vEgo + long_plan.aTarget * 1.5))
-      if v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
-        v_target = v_cruise_ms
+    if self.jve_acc_control:
+      v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
+      if len(long_plan.speeds) > 0:
+        lookahead_idx = min(5, len(long_plan.speeds) - 1)
+        v_plan = min(float(long_plan.speeds[lookahead_idx]), float(CS.vEgo + long_plan.aTarget * 1.5))
+        if v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
+          v_target = v_cruise_ms
+        else:
+          v_target = min(v_cruise_ms, max(v_plan, CS.vEgo + long_plan.aTarget * 1.0))
+          if long_plan.aTarget > 0:
+            v_target = min(v_target, CS.vEgo + 3.5)
+        actuators.speed = float(max(0.0, v_target))
       else:
-        v_target = min(v_cruise_ms, max(v_plan, CS.vEgo + long_plan.aTarget * 1.0))
-        if long_plan.aTarget > 0:
-          v_target = min(v_target, CS.vEgo + 3.5)
-      actuators.speed = float(max(0.0, v_target))
+        actuators.speed = float(max(0.0, v_cruise_ms))
     else:
-      actuators.speed = float(max(0.0, v_cruise_ms))
+      actuators.speed = 0.0
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
