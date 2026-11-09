@@ -28,12 +28,19 @@ _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 _A_LAT_TURN_MAX = 2.0   # m/s^2 comfortable lateral acceleration limit for jvePilot slow-in-turns
 _A_TURN_DECEL = 1.2     # m/s^2 comfortable lookahead deceleration approaching a turn
+_TURN_PROFILE_SCALE = {1: 0.8, 2: 1.0, 3: 1.2}  # 1: Relaxed (Slower), 2: Standard, 3: Aggressive (Faster)
+_AUTO_FOLLOW_SPEED_BP = {
+  1: (5.4, 12.5),   # Relaxed: <12 mph -> aggressive, 12-28 mph -> standard, >28 mph -> relaxed
+  2: (8.0, 17.9),   # Standard: <18 mph -> aggressive, 18-40 mph -> standard, >40 mph -> relaxed
+  3: (11.2, 24.6),  # Aggressive: <25 mph -> aggressive, 25-55 mph -> standard, >55 mph -> relaxed
+}
 
 
-def get_turn_speed_limit(model_msg, v_ego: float) -> float:
-  if len(model_msg.orientationRate.z) == 0 or len(model_msg.velocity.x) == 0:
+def get_turn_speed_limit(model_msg, v_ego: float, turn_profile: int = 2) -> float:
+  if turn_profile <= 0 or len(model_msg.orientationRate.z) == 0 or len(model_msg.velocity.x) == 0:
     return V_CRUISE_MAX * CV.KPH_TO_MS
 
+  ay_max = _A_LAT_TURN_MAX * _TURN_PROFILE_SCALE.get(turn_profile, 1.0)
   v_turn_min = V_CRUISE_MAX * CV.KPH_TO_MS
   n_pts = min(len(model_msg.orientationRate.z), len(model_msg.velocity.x), len(ModelConstants.T_IDXS))
   for i in range(n_pts):
@@ -41,7 +48,7 @@ def get_turn_speed_limit(model_msg, v_ego: float) -> float:
     yaw_rate = abs(float(model_msg.orientationRate.z[i]))
     curvature = yaw_rate / v_pred
     if curvature > 1e-4:
-      v_curve = math.sqrt(_A_LAT_TURN_MAX / curvature)
+      v_curve = math.sqrt(ay_max / curvature)
       t_lookahead = max(ModelConstants.T_IDXS[i] - 1.0, 0.0)
       dist = max(v_ego * t_lookahead, 0.0)
       v_allowed = math.sqrt(v_curve ** 2 + 2.0 * _A_TURN_DECEL * dist)
@@ -82,6 +89,8 @@ class LongitudinalPlanner:
     self.dt = dt
     self.allow_throttle = True
     self.jve_acc_control = False
+    self.jve_slow_in_turns = 2
+    self.jve_auto_follow = 2
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -102,7 +111,7 @@ class LongitudinalPlanner:
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
     if self.jve_acc_control and not sm['selfdriveState'].experimentalMode:
-      v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego))
+      v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego, self.jve_slow_in_turns))
     if sm['controlsState'].forceDecel:
       v_cruise = 0.0
 
@@ -131,9 +140,14 @@ class LongitudinalPlanner:
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
-    self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+    personality = sm['selfdriveState'].personality
+    if self.jve_acc_control and self.jve_auto_follow in _AUTO_FOLLOW_SPEED_BP:
+      bp_low, bp_high = _AUTO_FOLLOW_SPEED_BP[self.jve_auto_follow]
+      personality = 0 if v_ego < bp_low else (1 if v_ego < bp_high else 2)
+
+    self.mpc.set_weights(prev_accel_constraint, personality=personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.output_a_target)
-    self.mpc.update(sm['radarState'], personality=sm['selfdriveState'].personality)
+    self.mpc.update(sm['radarState'], personality=personality)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)

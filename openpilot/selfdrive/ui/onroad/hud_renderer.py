@@ -39,6 +39,8 @@ class Colors:
   DISENGAGED = rl.Color(145, 155, 149, 255)
   OVERRIDE = rl.Color(145, 155, 149, 255)  # Added
   ENGAGED = rl.Color(128, 216, 166, 255)
+  GAS = rl.Color(128, 216, 166, 255)
+  BRAKE = rl.Color(255, 95, 95, 255)
   DISENGAGED_BG = rl.Color(0, 0, 0, 153)
   OVERRIDE_BG = rl.Color(145, 155, 149, 204)
   ENGAGED_BG = rl.Color(128, 216, 166, 204)
@@ -64,6 +66,7 @@ class HudRenderer(Widget):
     self.is_cruise_available: bool = True
     self.set_speed: float = SET_SPEED_NA
     self.speed: float = 0.0
+    self.speed_color: rl.Color = COLORS.WHITE
     self.v_ego_cluster_seen: bool = False
 
     self._font_semi_bold: rl.Font = gui_app.font(FontWeight.SEMI_BOLD)
@@ -99,6 +102,16 @@ class HudRenderer(Widget):
     v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
+
+    if ui_state.status in (UIStatus.ENGAGED, UIStatus.OVERRIDE):
+      if car_state.brakePressed or car_state.aEgo < -0.15:
+        self.speed_color = COLORS.BRAKE
+      elif car_state.gasPressed or car_state.aEgo > 0.15:
+        self.speed_color = COLORS.GAS
+      else:
+        self.speed_color = COLORS.WHITE
+    else:
+      self.speed_color = COLORS.WHITE
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
@@ -172,7 +185,7 @@ class HudRenderer(Widget):
     speed_text = str(round(self.speed))
     speed_text_size = measure_text_cached(self._font_bold, speed_text, FONT_SIZES.current_speed)
     speed_pos = rl.Vector2(rect.x + rect.width / 2 - speed_text_size.x / 2, 180 - speed_text_size.y / 2)
-    rl.draw_text_ex(self._font_bold, speed_text, speed_pos, FONT_SIZES.current_speed, 0, COLORS.WHITE)
+    rl.draw_text_ex(self._font_bold, speed_text, speed_pos, FONT_SIZES.current_speed, 0, self.speed_color)
 
     unit_text = tr("km/h") if ui_state.is_metric else tr("mph")
     unit_text_size = measure_text_cached(self._font_medium, unit_text, FONT_SIZES.speed_unit)

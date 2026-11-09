@@ -23,6 +23,10 @@ DESCRIPTIONS = {
     "for upcoming curves, traffic, and smooth Eco acceleration using virtual steering wheel cruise buttons. " +
     "When disabled (default), the vehicle's stock Adaptive Cruise Control manages speed."
   ),
+  "JvePilotAutoResume": tr_noop("Automatically press ACC Resume when your vehicle comes to a complete stop behind a lead vehicle and traffic starts moving."),
+  "JvePilotSlowInTurns": tr_noop("Automatically reduce ACC set speed when approaching and driving through curves."),
+  "JvePilotAutoFollow": tr_noop("Automatically adjust ACC follow distance bars and time gap based on vehicle speed."),
+  "JvePilotAccEco": tr_noop("Limit how far above your current speed openpilot sets the ACC target speed when accelerating for smoother throttle response."),
   "LongitudinalPersonality": tr_noop(
     "Standard is recommended. In aggressive mode, openpilot will follow lead cars closer and be more aggressive with the gas and brake. " +
     "In relaxed mode openpilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
@@ -71,6 +75,12 @@ class TogglesLayout(Widget):
         "speed_limit.png",
         False,
       ),
+      "JvePilotAutoResume": (
+        lambda: tr("jvePilot Auto Resume from Stop"),
+        DESCRIPTIONS["JvePilotAutoResume"],
+        "speed_limit.png",
+        False,
+      ),
       "IsLdwEnabled": (
         lambda: tr("Enable Lane Departure Warnings"),
         DESCRIPTIONS["IsLdwEnabled"],
@@ -112,6 +122,33 @@ class TogglesLayout(Widget):
       selected_index=self._params.get("LongitudinalPersonality", return_default=True),
       icon="speed_limit.png"
     )
+    self._jve_slow_in_turns_setting = multiple_button_item(
+      lambda: tr("jvePilot Slow in Turns"),
+      lambda: tr(DESCRIPTIONS["JvePilotSlowInTurns"]),
+      buttons=[lambda: tr("Off"), lambda: tr("Relaxed"), lambda: tr("Standard"), lambda: tr("Aggressive")],
+      button_width=190,
+      callback=lambda idx: self._params.put("JvePilotSlowInTurns", idx, block=True),
+      selected_index=self._params.get("JvePilotSlowInTurns", return_default=True),
+      icon="speed_limit.png"
+    )
+    self._jve_auto_follow_setting = multiple_button_item(
+      lambda: tr("jvePilot Auto Follow"),
+      lambda: tr(DESCRIPTIONS["JvePilotAutoFollow"]),
+      buttons=[lambda: tr("Off"), lambda: tr("Relaxed"), lambda: tr("Standard"), lambda: tr("Aggressive")],
+      button_width=190,
+      callback=lambda idx: self._params.put("JvePilotAutoFollow", idx, block=True),
+      selected_index=self._params.get("JvePilotAutoFollow", return_default=True),
+      icon="speed_limit.png"
+    )
+    self._jve_acc_eco_setting = multiple_button_item(
+      lambda: tr("jvePilot ACC Eco"),
+      lambda: tr(DESCRIPTIONS["JvePilotAccEco"]),
+      buttons=[lambda: tr("Off"), lambda: tr("Eco 1"), lambda: tr("Eco 2")],
+      button_width=255,
+      callback=lambda idx: self._params.put("JvePilotAccEco", idx, block=True),
+      selected_index=self._params.get("JvePilotAccEco", return_default=True),
+      icon="speed_limit.png"
+    )
 
     self._toggles = {}
     self._locked_toggles = set()
@@ -145,6 +182,10 @@ class TogglesLayout(Widget):
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
+      elif param == "JvePilotAutoResume":
+        self._toggles["JvePilotSlowInTurns"] = self._jve_slow_in_turns_setting
+        self._toggles["JvePilotAutoFollow"] = self._jve_auto_follow_setting
+        self._toggles["JvePilotAccEco"] = self._jve_acc_eco_setting
 
     self._update_experimental_mode_icon()
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
@@ -205,6 +246,10 @@ class TogglesLayout(Widget):
       self._toggles["ExperimentalMode"].set_description(e2e_description)
 
     self._update_experimental_mode_icon()
+    jve_enabled = self._params.get_bool("JvePilotAccControl")
+    self._jve_slow_in_turns_setting.action_item.set_enabled(jve_enabled)
+    self._jve_auto_follow_setting.action_item.set_enabled(jve_enabled)
+    self._jve_acc_eco_setting.action_item.set_enabled(jve_enabled)
 
     # TODO: make a param control list item so we don't need to manage internal state as much here
     # refresh toggles from params to mirror external changes

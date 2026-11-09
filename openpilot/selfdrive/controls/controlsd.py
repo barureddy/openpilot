@@ -47,6 +47,10 @@ class Controls:
     self.curvature = 0.0
     self.desired_curvature = 0.0
     self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+    self.jve_auto_resume = self.params.get_bool("JvePilotAutoResume")
+    self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
+    self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
+    self.jve_follow_bars = 2
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -67,6 +71,9 @@ class Controls:
     self.sm.update(15)
     if self.sm.frame % 100 == 0:
       self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+      self.jve_auto_resume = self.params.get_bool("JvePilotAutoResume")
+      self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
+      self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
     if self.sm.updated["extrinsicsCalibration"]:
       self.pose_calibrator.feed_extrinsics_calibration(self.sm['extrinsicsCalibration'])
     if self.sm.updated["deviceMotion"]:
@@ -124,15 +131,19 @@ class Controls:
     # jvePilot hybrid ACC target speed (used by CarController to modulate stock ACC set speed via cruise buttons)
     if self.jve_acc_control:
       v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
+      eco_headroom = {0: 5.0, 1: 3.0, 2: 1.8}.get(self.jve_acc_eco, 3.0)
       if len(long_plan.speeds) > 0:
         lookahead_idx = min(5, len(long_plan.speeds) - 1)
         v_plan = min(float(long_plan.speeds[lookahead_idx]), float(CS.vEgo + long_plan.aTarget * 1.5))
-        if v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
+        if long_plan.aTarget < -0.1:
+          # ACC braking: set cruise speed lower than target to help slow the vehicle sooner
+          v_target = min(v_cruise_ms, v_plan, float(CS.vEgo + long_plan.aTarget * 2.5))
+        elif v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
           v_target = v_cruise_ms
         else:
-          v_target = min(v_cruise_ms, max(v_plan, CS.vEgo + long_plan.aTarget * 1.0))
+          v_target = min(v_cruise_ms, max(v_plan, float(CS.vEgo + long_plan.aTarget * 1.0)))
           if long_plan.aTarget > 0:
-            v_target = min(v_target, CS.vEgo + 3.5)
+            v_target = min(v_target, float(CS.vEgo + eco_headroom))
         actuators.speed = float(max(0.0, v_target))
       else:
         actuators.speed = float(max(0.0, v_cruise_ms))
@@ -181,14 +192,30 @@ class Controls:
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and self.CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
+    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop and self.jve_auto_resume
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)
     hudControl.speedVisible = CC.enabled
     hudControl.lanesVisible = CC.enabled
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
-    hudControl.leadDistanceBars = self.sm['selfdriveState'].personality.raw + 1
+    if self.jve_acc_control and self.jve_auto_follow in (1, 2, 3):
+      # Speed thresholds (m/s) for 1->2, 2->3, and 3->4 follow distance bars with 0.8 m/s hysteresis
+      thresholds = {
+        1: (5.4, 11.2, 18.8),   # Relaxed: 12 / 25 / 42 mph
+        2: (6.7, 13.4, 22.4),   # Standard: 15 / 30 / 50 mph
+        3: (8.0, 16.1, 25.9),   # Aggressive: 18 / 36 / 58 mph
+      }[self.jve_auto_follow]
+      hyst = 0.8
+      while self.jve_follow_bars < 4 and CS.vEgo > thresholds[self.jve_follow_bars - 1] + hyst:
+        self.jve_follow_bars += 1
+      while self.jve_follow_bars > 1 and CS.vEgo < thresholds[self.jve_follow_bars - 2] - hyst:
+        self.jve_follow_bars -= 1
+      hudControl.leadDistanceBars = self.jve_follow_bars
+    elif self.jve_acc_control:
+      hudControl.leadDistanceBars = 0
+    else:
+      hudControl.leadDistanceBars = self.sm['selfdriveState'].personality.raw + 1
     hudControl.visualAlert = self.sm['selfdriveState'].alertHudVisual
 
     hudControl.rightLaneVisible = True

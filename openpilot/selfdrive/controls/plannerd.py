@@ -19,6 +19,8 @@ def main():
   ldw = LaneDepartureWarning()
   longitudinal_planner = LongitudinalPlanner(CP)
   longitudinal_planner.jve_acc_control = params.get_bool("JvePilotAccControl")
+  longitudinal_planner.jve_slow_in_turns = params.get("JvePilotSlowInTurns", return_default=True)
+  longitudinal_planner.jve_auto_follow = params.get("JvePilotAutoFollow", return_default=True)
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance'])
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'vehicleParameters', 'radarState', 'modelV2', 'selfdriveState'],
                            poll='modelV2')
@@ -28,6 +30,8 @@ def main():
     if sm.updated['modelV2']:
       if sm.frame % 20 == 0:
         longitudinal_planner.jve_acc_control = params.get_bool("JvePilotAccControl")
+        longitudinal_planner.jve_slow_in_turns = params.get("JvePilotSlowInTurns", return_default=True)
+        longitudinal_planner.jve_auto_follow = params.get("JvePilotAutoFollow", return_default=True)
       longitudinal_planner.update(sm)
       longitudinal_planner.publish(sm, pm)
 
