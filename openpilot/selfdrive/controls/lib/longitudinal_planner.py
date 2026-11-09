@@ -26,6 +26,27 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
+_A_LAT_TURN_MAX = 2.0   # m/s^2 comfortable lateral acceleration limit for jvePilot slow-in-turns
+_A_TURN_DECEL = 1.2     # m/s^2 comfortable lookahead deceleration approaching a turn
+
+
+def get_turn_speed_limit(model_msg, v_ego: float) -> float:
+  if len(model_msg.orientationRate.z) == 0 or len(model_msg.velocity.x) == 0:
+    return V_CRUISE_MAX * CV.KPH_TO_MS
+
+  v_turn_min = V_CRUISE_MAX * CV.KPH_TO_MS
+  n_pts = min(len(model_msg.orientationRate.z), len(model_msg.velocity.x), len(ModelConstants.T_IDXS))
+  for i in range(n_pts):
+    v_pred = max(float(model_msg.velocity.x[i]), 3.0)
+    yaw_rate = abs(float(model_msg.orientationRate.z[i]))
+    curvature = yaw_rate / v_pred
+    if curvature > 1e-4:
+      v_curve = math.sqrt(_A_LAT_TURN_MAX / curvature)
+      t_lookahead = max(ModelConstants.T_IDXS[i] - 1.0, 0.0)
+      dist = max(v_ego * t_lookahead, 0.0)
+      v_allowed = math.sqrt(v_curve ** 2 + 2.0 * _A_TURN_DECEL * dist)
+      v_turn_min = min(v_turn_min, v_allowed)
+  return v_turn_min
 
 def get_max_accel(v_ego):
   return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
@@ -79,6 +100,8 @@ class LongitudinalPlanner:
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
+    if not sm['selfdriveState'].experimentalMode:
+      v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego))
     if sm['controlsState'].forceDecel:
       v_cruise = 0.0
 

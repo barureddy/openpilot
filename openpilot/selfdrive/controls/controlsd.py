@@ -118,6 +118,21 @@ class Controls:
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
 
+    # jvePilot hybrid ACC target speed (used by CarController to modulate stock ACC set speed via cruise buttons)
+    v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
+    if len(long_plan.speeds) > 0:
+      lookahead_idx = min(5, len(long_plan.speeds) - 1)
+      v_plan = min(float(long_plan.speeds[lookahead_idx]), float(CS.vEgo + long_plan.aTarget * 1.5))
+      if v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
+        v_target = v_cruise_ms
+      else:
+        v_target = min(v_cruise_ms, max(v_plan, CS.vEgo + long_plan.aTarget * 1.0))
+        if long_plan.aTarget > 0:
+          v_target = min(v_target, CS.vEgo + 3.5)
+      actuators.speed = float(max(0.0, v_target))
+    else:
+      actuators.speed = float(max(0.0, v_cruise_ms))
+
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
     if self.sm.valid['lateralManeuverPlan']:
