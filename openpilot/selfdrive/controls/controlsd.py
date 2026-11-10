@@ -193,7 +193,8 @@ class Controls:
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and self.CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop and self.jve_auto_resume
+    CC.cruiseControl.resume = (CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop and
+                               self.jve_auto_resume and not CS.brakePressed and not CS.gasPressed and not CS.accFaulted)
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)
