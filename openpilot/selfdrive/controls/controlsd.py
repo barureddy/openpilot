@@ -51,6 +51,7 @@ class Controls:
     self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
     self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
     self.jve_follow_bars = 2
+    self.jve_auto_follow_override = False
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -199,7 +200,12 @@ class Controls:
     hudControl.speedVisible = CC.enabled
     hudControl.lanesVisible = CC.enabled
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
-    if self.jve_acc_control and self.jve_auto_follow in (1, 2, 3):
+    if not CC.enabled or not CS.cruiseState.enabled:
+      self.jve_auto_follow_override = False
+    elif any(not be.pressed and be.type == car.CarState.ButtonEvent.Type.gapAdjustCruise for be in CS.buttonEvents):
+      self.jve_auto_follow_override = not self.jve_auto_follow_override
+
+    if self.jve_acc_control and self.jve_auto_follow in (1, 2, 3) and not self.jve_auto_follow_override:
       # Speed thresholds (m/s) for 1->2, 2->3, and 3->4 follow distance bars with 0.8 m/s hysteresis
       thresholds = {
         1: (5.4, 11.2, 18.8),   # Relaxed: 12 / 25 / 42 mph

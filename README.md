@@ -38,6 +38,55 @@ Quick start: `bash <(curl -fsSL openpilot.comma.ai)`
 </table>
 
 
+jvePilot Hybrid ACC for Jeep Cherokee (KL / CUSW) & FCA Vehicles
+------
+
+This branch ports **jvePilot**’s Hybrid Adaptive Cruise Control (ACC) longitudinal speed-control suite to modern `openpilot` and `opendbc`, with full support for **CUSW** vehicles (2014–2018 Jeep Cherokee KL using `CRUISE_BUTTONS` `0x2FA`) as well as non-CUSW FCA vehicles (Chrysler Pacifica, Jeep Grand Cherokee, Ram using `CRUISE_BUTTONS` `0x23B`).
+
+Because FCA vehicles with factory DASM/ACC keep the stock radar in control of gas and brake actuators, **jvePilot** bridges openpilot's longitudinal planner (`modelV2` vision + lead tracking) with the vehicle's stock ACC by transmitting virtual steering-wheel cruise button presses (`ACC_Accel` / `Cruise +`, `ACC_Decel` / `Cruise -`, `ACC_Resume`, `ACC_Cancel`, `ACC_Distance_Inc`, `ACC_Distance_Dec`) over the powertrain CAN bus.
+
+### Features Included
+
+1. **Smoother Driving in Traffic**: Uses openpilot's longitudinal MPC (`LongitudinalPlanner`) to predict lead vehicle motion and smoothly modulate the vehicle's ACC set speed (`CC.actuators.speed`) via virtual `ACC_Accel` / `ACC_Decel` button pulses (`20 ms` hold on an `80 ms` / `12.5 Hz` cycle with a `0.35 m/s` deadband).
+2. **Proactive ACC Braking**: When openpilot's longitudinal plan calls for deceleration (`aTarget < -0.1 m/s²`), `controlsd` sets the target ACC speed below current vehicle speed (`vEgo + aTarget * 2.5`) so the stock ACC module engages brakes sooner instead of coasting.
+3. **Slow for Cars Cutting In Before Stock ACC Does**: Uses openpilot's camera-based vision lead detection (`modelV2.leadsV3` in `radard`) combined with proactive ACC braking to lower the ACC set speed as soon as a cut-in vehicle is seen by the camera—before the narrow-beam radar locks on.
+4. **Slow in a Turn (Configurable)**: Computes lookahead road curvature from `modelV2.orientationRate.z` and `modelV2.velocity.x` (`get_turn_speed_limit`) and automatically lowers the ACC set speed before and through curves, then restores your set speed exiting the turn.
+5. **0 mph Stop-and-Go Auto Resume (Configurable)**: Automatically sends `ACC_Resume` when the vehicle comes to a complete stop behind a lead vehicle and traffic begins moving (`!longitudinalPlan.shouldStop`). Also fixes `ret.cruiseState.standstill` detection on CUSW (`CarState.update_cusw`).
+6. **Auto Follow Distance (Configurable)**: Dynamically adjusts both openpilot's MPC follow time gap and the vehicle's hardware ACC follow-distance bars (`1–4 bars` via virtual `ACC_Distance_Inc` / `ACC_Distance_Dec` presses) based on vehicle speed. Pressing the physical steering-wheel distance button toggles manual distance override for the current engagement.
+7. **ACC Eco Throttle Limiting (Configurable)**: Caps how far above current speed (`vEgo`) openpilot pushes the ACC set speed when accelerating back up to cruise speed, preventing aggressive downshifts and wide-open throttle surges.
+8. **Gas Pedal Does Not Disengage (Configurable)**: Pressing the accelerator pedal overrides speed without disengaging openpilot (`DisengageOnAccelerator` defaults to `Off`). Pressing `SET-` while holding the gas pedal syncs `v_cruise` to your current speed.
+9. **Speedometer Display Sync**: Syncs openpilot's on-road speed readout (`vEgoCluster`) with the vehicle's instrument cluster speedometer (`CLUSTER_1["SPEEDOMETER"]` on CUSW / `ESP_8["Vehicle_Speed"]` on Pacifica/Grand Cherokee).
+10. **Gas / Brake Speed Indicator Colors**: Colors the on-screen current speed readout **green** when accelerating (`aEgo > 0.15 m/s²` or gas pressed) and **red** when braking (`aEgo < -0.15 m/s²` or brake pressed) while engaged.
+
+---
+
+### Settings & Configuration (`Settings → Toggles`)
+
+All `jvePilot` settings are located in **Settings → Toggles** on the device UI, persist across reboots, and update live while driving without requiring a restart:
+
+| Setting Name (`Params` Key) | Options / Type | Default | Description & Behavior |
+|---|---|---|---|
+| **jvePilot ACC Speed Control** (`JvePilotAccControl`) | `Off` / `On` (Toggle) | **`Off`** (Stock ACC) | Master switch between **Stock Adaptive Cruise Control** (`Off`) and **jvePilot Hybrid ACC Speed Control** (`On`). When `Off`, openpilot sends zero virtual speed or distance button presses and the vehicle's factory ACC manages set speed directly. |
+| **jvePilot Auto Resume from Stop** (`JvePilotAutoResume`) | `Off` / `On` (Toggle) | **`On`** | When enabled, automatically sends `ACC_Resume` when stopped at 0 mph behind a lead car as soon as traffic moves forward. When disabled, you must tap `RES+` or the gas pedal to resume from a standstill. |
+| **jvePilot Slow in Turns** (`JvePilotSlowInTurns`) | `Off`, `Relaxed`, `Standard`, `Aggressive` | **`Standard`** | Controls how much openpilot reduces ACC set speed in curves via lateral acceleration limits:<br>• **Off**: No curve speed reduction<br>• **Relaxed**: `1.6 m/s²` max lateral accel (slows more in turns)<br>• **Standard**: `2.0 m/s²` max lateral accel<br>• **Aggressive**: `2.4 m/s²` max lateral accel (takes turns faster) |
+| **jvePilot Auto Follow** (`JvePilotAutoFollow`) | `Off`, `Relaxed`, `Standard`, `Aggressive` | **`Standard`** | Automatically adjusts ACC follow-distance bars (`1 → 2 → 3 → 4 bars`) and MPC follow gap as speed increases (with `~1.8 mph` hysteresis):<br>• **Off**: Manual follow distance only<br>• **Relaxed**: Steps bars at `12 / 25 / 42 mph` (longer distance sooner)<br>• **Standard**: Steps bars at `15 / 30 / 50 mph`<br>• **Aggressive**: Steps bars at `18 / 36 / 58 mph` (closer following) |
+| **jvePilot ACC Eco** (`JvePilotAccEco`) | `Off`, `Eco 1`, `Eco 2` | **`Eco 1`** | Limits how far above `vEgo` the ACC target speed is set during acceleration:<br>• **Off**: Up to `+5.0 m/s` (`~11 mph`) lead<br>• **Eco 1**: Up to `+3.0 m/s` (`~6.7 mph`) lead<br>• **Eco 2**: Up to `+1.8 m/s` (`~4.0 mph`) lead (gentlest throttle) |
+| **Disengage on Accelerator Pedal** (`DisengageOnAccelerator`) | `Off` / `On` (Toggle) | **`Off`** | When `Off` (default), pressing the gas pedal does not disengage openpilot. |
+| **Driving Personality** (`LongitudinalPersonality`) | `Aggressive`, `Standard`, `Relaxed` | **`Standard`** | Unlocked when **jvePilot ACC Speed Control** is `On` (used when **jvePilot Auto Follow** is `Off`). |
+
+---
+
+### Comparison with Upstream `jvePilot` (`j-vanetten/openpilot`)
+
+| Area | Upstream `jvePilot` (`j-vanetten/openpilot`) | This Branch (`barureddy/openpilot` — `jvePilot`) |
+|---|---|---|
+| **Supported FCA Platforms** | Non-CUSW FCA only (Pacifica, Grand Cherokee, Ram using `WHEEL_BUTTONS` `0x23B`, `DAS_3`, `DAS_4`, `ESP_8`). | Supports **both** **CUSW** (`CAR.JEEP_CHEROKEE_5TH_GEN` using `CRUISE_BUTTONS` `0x2FA`, `ACC_CONTROL`, `ACC_HUD`, `CLUSTER_1`) and non-CUSW FCA (`0x23B`). |
+| **CUSW `CRUISE_BUTTONS` Counter & Standstill** | Not present (CUSW not supported in upstream `jvePilot`). | Fixed `self.button_counter` in `CarState.update_cusw` (was stuck at `0`, causing transmitted `0x2FA` frames to have a frozen counter of `1`) and added `ret.cruiseState.standstill` on CUSW. |
+| **Panda Safety Layer** | Allows `CRUISE_BUTTONS` (`0x23B`) in Panda safety. | Enforces single-button-only TX safety in both `chrysler_cusw.h` (`0x2FA`) and `chrysler.h` (`0x23B`): allows `ACC_Resume`, `ACC_Accel`, `ACC_Decel`, `ACC_Distance_Inc`, `ACC_Distance_Dec` when `controls_allowed == true`, and `ACC_Cancel` always. |
+| **Default Mode (Stock ACC vs jvePilot)** | `jvePilot` hybrid ACC is always active when engaged. | Configurable via **jvePilot ACC Speed Control** in `Settings → Toggles`, defaulting to **Off (Stock ACC)** per user preference. |
+| **UI Controls for `ACC Eco` & `Auto Follow`** | Placed as custom Qt overlay buttons (leaf icon / auto-follow icon) on the legacy openpilot 0.8/0.9 Qt on-road screen. | Integrated natively into modern openpilot's Raylib **Settings → Toggles** menu (`multiple_button_item` selectors), plus physical steering-wheel distance button override on-road. |
+
+
 Using openpilot in a car
 ------
 
