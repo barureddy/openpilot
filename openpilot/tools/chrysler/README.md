@@ -32,3 +32,59 @@ The source, units, remaining flags, authorization sequence, arbitration, overrid
 timeout and failure behavior are unresolved. No live control should be inferred from
 this decoder. Controlled hardware validation is required before designing actuation
 support. Parking-lot space does not establish command or fault behavior.
+
+## Receive-only parking-interface support
+
+`parksense_interface.ParkingObserver` is a reusable, transport-free observer for
+candidate 0x20C requests, 0x1EC EPS markers, and 0x2F2/0x5E6 parking context.
+It has no command encoder, steering-authority output, live CAN connection or
+controller integration. Installing this branch will not enable low-speed steering.
+
+Replay one complete route (one boot) from a configured development environment:
+
+```sh
+python -m openpilot.tools.chrysler.parksense_replay --output observations.csv /path/segment0/rlog.zst /path/segment1/rlog.zst
+python -m unittest discover -s openpilot/tools/chrysler/tests -v
+```
+
+Replay sorts relevant received frames by monotonic timestamp, preserves equal-time
+frame order, and removes exact timestamp/address/payload duplicates across supplied
+segments. Do not combine routes or boots: monotonic times alone cannot distinguish
+such files reliably. Only the four relevant IDs are retained in memory. Full log
+segments are decompressed one at a time. Existing output files are never overwritten.
+
+Observations use these labels:
+
+| Phase | Meaning |
+|---|---|
+| unknown | Missing, stale or invalid request/EPS input |
+| inactive_observed | Request, arming and EPS candidate markers clear |
+| armed_observed | Arming candidate set, with request and EPS markers clear |
+| request_pending | Request candidate set without EPS candidate markers |
+| request_eps_observed | Request candidate and at least one EPS marker set |
+| eps_without_request | EPS marker remains set without request; may be release transition |
+
+These are observed combinations, not a validated EPS state machine. None means
+“safe to steer.” Search state alone never becomes an active-request observation.
+EPS early and late markers remain separate fields. Unknown transition flags and
+both 0x5E6 state candidates remain separate rather than being treated as a timer or
+interchangeable flags. Cruise CANCEL is not interpreted as a ParkSense cancellation.
+
+The observer checks lengths and, for 0x20C/0x1EC, checksums and rolling counters.
+A damaged or discontinuous frame invalidates that message's observation. The next
+valid sequential frame can restore it; checksum/length failures reset the counter
+baseline. Counter gaps may be recording loss, not a vehicle fault. A nonzero
+candidate value with the request flag clear is also reported as an inconsistency.
+0x2F2/0x5E6 have no verified integrity definition here and are context only.
+
+Default maximum ages are 500 ms for 0x20C, 100 ms for EPS and 0x2F2, and 750 ms
+for 0x5E6. These are configurable analysis tolerances for the main request/EPS
+streams, accommodating idle cadence; they are **not vehicle watchdog deadlines**.
+Call `snapshot(time)` to observe aging even when no new frames arrive. CSV rows
+are emitted on received events only; they do not manufacture samples after log end.
+Raw torque values have no asserted physical units or validated limits.
+
+Before adding any transmitter, controlled validation must establish message origin,
+authorization, physical scaling, operating speed/duration envelope, stock-controller
+arbitration, override, cancellation, and communication-failure behavior. The recorded
+parking maneuvers do not establish continuous 0–41 mph control.

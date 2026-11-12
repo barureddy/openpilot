@@ -12,6 +12,8 @@ FIELDS = (
   'file', 'mono_ns', 'bus', 'id', 'payload', 'checksum_valid', 'counter',
   'candidate_value', 'candidate_request', 'candidate_later_marker', 'unknown_byte2_high',
   'eps_candidate_early', 'eps_candidate_late',
+  'candidate_armed', 'unknown_transition', 'driver_torque_raw', 'motor_torque_raw',
+  'lkas_state', 'lkas_fault',
 )
 
 
@@ -33,12 +35,18 @@ def decode(address: int, data: bytes) -> dict | None:
       'candidate_request': (data[1] >> 4) & 1,
       'candidate_later_marker': (data[1] >> 1) & 1,
       'unknown_byte2_high': data[2] >> 4,
+      'candidate_armed': (data[2] >> 4) & 1,
+      'unknown_transition': (data[2] >> 7) & 1,
     }
   if address == 0x1EC and len(data) == 8:
     return {
       'checksum_valid': checksum_valid(data), 'counter': data[6] & 0xF,
       'eps_candidate_early': (data[3] >> 6) & 1,
       'eps_candidate_late': (data[0] >> 5) & 1,
+      'driver_torque_raw': ((data[0] & 0xF) << 8 | data[1]) - 1024,
+      'motor_torque_raw': ((data[3] & 0xF) << 8 | data[4]) - 2048,
+      'lkas_state': data[2] & 1,
+      'lkas_fault': (data[2] >> 1) & 1,
     }
   return None
 
