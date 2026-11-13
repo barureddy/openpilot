@@ -88,3 +88,25 @@ Before adding any transmitter, controlled validation must establish message orig
 authorization, physical scaling, operating speed/duration envelope, stock-controller
 arbitration, override, cancellation, and communication-failure behavior. The recorded
 parking maneuvers do not establish continuous 0–41 mph control.
+
+## Optional on-device receive-only monitor
+
+From the configured openpilot directory on the comma device, while parked:
+
+```sh
+python -m openpilot.tools.chrysler.parksense_monitor --duration 600 --output /data/media/0/parksense-monitor.jsonl
+```
+
+Use a new filename each time. This manually started process subscribes only to
+openpilot's existing received-CAN stream and writes observations at no more than
+10 Hz. It exits after ten minutes by default (maximum thirty minutes), or Ctrl-C.
+It is not automatically launched, changes no parameters, and publishes no messages.
+Normal openpilot and factory parking behavior remain unchanged. Do not operate the
+terminal while driving. Keep the original rlogs; the monitor output is only a summary.
+
+A missing/stale stream yields `unknown`, including when no CAN events arrive.
+Timestamp errors and invalid events are counted. Diagnostic labels, freshness windows
+and candidate torque values are not control permissions, validated watchdogs or limits.
+This tool does not make new driving experiments necessary and does not validate active
+steering. Device runtime/CPU performance has not been tested on a physical comma unit;
+validation here covers simulated receipt, stream loss and recorded-log decoding.
