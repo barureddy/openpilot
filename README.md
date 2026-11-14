@@ -47,7 +47,7 @@ Because FCA vehicles with factory DASM/ACC keep the stock radar in control of ga
 
 ### Features Included
 
-1. **Smoother Driving in Traffic**: Uses openpilot's longitudinal MPC (`LongitudinalPlanner`) to predict lead vehicle motion and smoothly modulate the vehicle's ACC set speed (`CC.actuators.speed`) via virtual `ACC_Accel` / `ACC_Decel` button presses. Each press is a single CAN frame, at least `80 ms` apart, with a `0.35 m/s` deadband. After each press openpilot waits for the stock ACC set speed on CAN to change (up to `500 ms`) before pressing again, so it does not overshoot.
+1. **Smoother Driving in Traffic**: Uses openpilot's longitudinal MPC (`LongitudinalPlanner`) to predict lead vehicle motion and smoothly modulate the vehicle's ACC set speed (`CC.actuators.speed`) via virtual `ACC_Accel` / `ACC_Decel` button presses. Each press is a single CAN frame, at least `80 ms` apart. After each press openpilot waits for the stock ACC set speed on CAN to change (up to `500 ms`) before pressing again, so it does not overshoot. It learns how much one press changes the set speed (1 mph or 1 km/h) and stops at the closest reachable value. If the car ignores a press near its minimum or maximum ACC speed, that limit is remembered for the engagement instead of being treated as a fault.
 2. **Proactive ACC Braking (Configurable)**: When openpilot's longitudinal plan calls for deceleration (`aTarget < -0.1 m/s²`), the target ACC speed is set below current vehicle speed (`vEgo + aTarget * 2.5`) so the stock ACC module starts slowing sooner. The set speed is only lowered for a lead the driving model is confident about (`leadsV3.prob ≥ 0.7`), to avoid phantom slowdowns from camera-only leads; stock ACC radar still handles real leads.
 3. **Slow for Cars Cutting In Before Stock ACC Does**: Uses openpilot's camera-based vision lead detection (`modelV2.leadsV3` in `radard`) combined with proactive ACC braking to lower the ACC set speed as soon as a cut-in vehicle is seen by the camera—before the narrow-beam radar locks on.
 4. **Slow in a Turn (Configurable)**: Computes lookahead road curvature from `modelV2.orientationRate.z` and `modelV2.velocity.x` (`get_turn_speed_limit`) and automatically lowers the ACC set speed before and through curves, then restores your set speed exiting the turn.
@@ -92,10 +92,12 @@ All `jvePilot` settings are located in **Settings → Toggles** on the device UI
 ### Known Limitations / Still Unverified on a CUSW Vehicle
 
 > [!WARNING]
-> This is a custom, unofficial branch. It has passed unit and Panda safety tests only, not on-car validation. Test first in a safe, controlled setting with stock ACC as the default.
+> This is a custom, unofficial branch. CUSW (2014–2018 Jeep Cherokee) is the primary target. It has passed unit tests, Panda safety tests, and a CAN-level CUSW closed-loop simulation (`opendbc/car/chrysler/tests/test_chrysler_cusw_sim.py`), but not on-car validation. Test first in a safe, controlled setting with stock ACC as the default.
 
 - **Button press registration**: single injected `CRUISE_BUTTONS` frames are proven upstream for `Cancel`/`Resume`, but not yet confirmed for `Accel`/`Decel`/`Distance` on CUSW.
-- **`ACC_HUD` timing**: how often the CUSW `ACC_HUD` set speed updates is unknown; the feedback timeout (`500 ms`) assumes ≥ 2 Hz.
+- **`ACC_HUD` timing**: the real CUSW update rate is unknown. The CUSW simulation test passes with `ACC_HUD` at 2–10 Hz and up to `300 ms` delay.
+- **`ACC_HUD["ACC_SET_SPEED_KMH"]` units on mph-display cars**: assumed to be km/h as named in the DBC. If a US-market Cherokee actually reports mph here, the set speed shown and tracked by openpilot would be wrong.
+- **Stop-and-go on 2014–2018 Cherokee**: how long stock ACC holds at a stop before needing `RES` or cancelling is not modeled.
 - **Follow-distance mapping**: CUSW `ACC_HUD["DISTANCE_SETTING"] + 1` is assumed to equal the bar count, with `ACC_Distance_Inc` adding a bar. If wrong, Auto Follow disables itself for the engagement.
 - **`CLUSTER_1["SPEEDOMETER"]` scaling** on CUSW should be checked against the dash.
 - **ACC fault signal on CUSW** has not been identified, so `accFaulted` is always `False` on CUSW.
