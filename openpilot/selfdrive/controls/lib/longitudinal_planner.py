@@ -13,6 +13,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import Longi
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
+from openpilot.selfdrive.controls.lib.jvepilot import BARS_TO_PERSONALITY, jve_supported
 from openpilot.common.swaglog import cloudlog
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -29,11 +30,6 @@ _A_TOTAL_MAX_BP = [20., 40.]
 _A_LAT_TURN_MAX = 2.0   # m/s^2 comfortable lateral acceleration limit for jvePilot slow-in-turns
 _A_TURN_DECEL = 1.2     # m/s^2 comfortable lookahead deceleration approaching a turn
 _TURN_PROFILE_SCALE = {1: 0.8, 2: 1.0, 3: 1.2}  # 1: Relaxed (Slower), 2: Standard, 3: Aggressive (Faster)
-_AUTO_FOLLOW_SPEED_BP = {
-  1: (5.4, 12.5),   # Relaxed: <12 mph -> aggressive, 12-28 mph -> standard, >28 mph -> relaxed
-  2: (8.0, 17.9),   # Standard: <18 mph -> aggressive, 18-40 mph -> standard, >40 mph -> relaxed
-  3: (11.2, 24.6),  # Aggressive: <25 mph -> aggressive, 25-55 mph -> standard, >55 mph -> relaxed
-}
 
 
 def get_turn_speed_limit(model_msg, v_ego: float, turn_profile: int = 2) -> float:
@@ -88,9 +84,9 @@ class LongitudinalPlanner:
     self.fcw = False
     self.dt = dt
     self.allow_throttle = True
+    self.jve_supported = jve_supported(CP)
     self.jve_acc_control = False
     self.jve_slow_in_turns = 2
-    self.jve_auto_follow = 2
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -110,7 +106,8 @@ class LongitudinalPlanner:
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
-    if self.jve_acc_control and not sm['selfdriveState'].experimentalMode:
+    jve_active = self.jve_acc_control and self.jve_supported
+    if jve_active and not sm['selfdriveState'].experimentalMode:
       v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego, self.jve_slow_in_turns))
     if sm['controlsState'].forceDecel:
       v_cruise = 0.0
@@ -141,9 +138,9 @@ class LongitudinalPlanner:
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
     personality = sm['selfdriveState'].personality
-    if self.jve_acc_control and self.jve_auto_follow in _AUTO_FOLLOW_SPEED_BP:
-      bp_low, bp_high = _AUTO_FOLLOW_SPEED_BP[self.jve_auto_follow]
-      personality = 0 if v_ego < bp_low else (1 if v_ego < bp_high else 2)
+    if jve_active:
+      # Follow the stock ACC bar setting that controlsd's Auto Follow requests (0 = driver/manual, keep personality)
+      personality = BARS_TO_PERSONALITY.get(int(sm['carControl'].hudControl.leadDistanceBars), personality)
 
     self.mpc.set_weights(prev_accel_constraint, personality=personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.output_a_target)

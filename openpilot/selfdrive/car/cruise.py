@@ -35,12 +35,21 @@ class VCruiseHelper:
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.v_cruise_kph_last = 0
     self.jve_acc_control = False
+    # jvePilot: driver's max speed from the last engagement, restored when re-engaging with RES+
+    self.jve_v_cruise_max = V_CRUISE_UNSET
+    self.jve_resume_requested = False
+    self.jve_engaged_prev = False
     self.button_timers = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0}
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
 
   @property
   def v_cruise_initialized(self):
     return self.v_cruise_kph != V_CRUISE_UNSET
+
+  @property
+  def jve_active(self) -> bool:
+    return (self.jve_acc_control and self.CP.brand == "chrysler" and self.CP.pcmCruise and
+            not self.CP.openpilotLongitudinalControl)
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
@@ -51,10 +60,18 @@ class VCruiseHelper:
         self._update_v_cruise_non_pcm(CS, enabled, is_metric)
         self.v_cruise_cluster_kph = self.v_cruise_kph
         self.update_button_timers(CS, enabled)
-      elif self.jve_acc_control and self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl:
+      elif self.jve_active:
         # jvePilot hybrid ACC: while engaged, track driver's desired max cruise speed via physical
         # steering wheel buttons so CarController can modulate the car's actual ACC set speed below v_cruise_kph
         if not enabled or not CS.cruiseState.enabled or not self.v_cruise_initialized:
+          # Standby/disengaged: remember whether the driver resumes (RES+) or sets a new speed (SET-)
+          for b in CS.buttonEvents:
+            if not b.pressed:
+              if b.type in (ButtonType.accelCruise, ButtonType.resumeCruise):
+                self.jve_resume_requested = True
+              elif b.type in (ButtonType.decelCruise, ButtonType.setCruise):
+                self.jve_resume_requested = False
+          self.jve_engaged_prev = False
           self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
           self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
           if CS.cruiseState.speed == 0:
@@ -69,6 +86,10 @@ class VCruiseHelper:
           if CS.cruiseState.speed * CV.MS_TO_KPH > self.v_cruise_kph + 1.0:
             self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
           self.v_cruise_cluster_kph = self.v_cruise_kph
+          # Skip the first engaged frame so initialize_v_cruise can still restore the previous max speed
+          if self.jve_engaged_prev:
+            self.jve_v_cruise_max = self.v_cruise_kph
+          self.jve_engaged_prev = True
           self.update_button_timers(CS, enabled)
       else:
         self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
@@ -82,6 +103,10 @@ class VCruiseHelper:
     else:
       self.v_cruise_kph = V_CRUISE_UNSET
       self.v_cruise_cluster_kph = V_CRUISE_UNSET
+      # ACC main off: forget the jvePilot driver max speed
+      self.jve_v_cruise_max = V_CRUISE_UNSET
+      self.jve_resume_requested = False
+      self.jve_engaged_prev = False
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
     # handle button presses. TODO: this should be in state_control, but a decelCruise press
@@ -125,9 +150,13 @@ class VCruiseHelper:
     else:
       self.v_cruise_kph += v_cruise_delta * CRUISE_INTERVAL_SIGN[button_type]
 
-    # If set is pressed while overriding, sync cruise speed to vEgo
     if CS.gasPressed and button_type in (ButtonType.decelCruise, ButtonType.setCruise):
-      self.v_cruise_kph = max(CS.vEgo, CS.cruiseState.speed) * CV.MS_TO_KPH
+      if self.jve_active:
+        # jvePilot: SET- while pressing the gas syncs the driver max speed to the current speed (like stock FCA ACC)
+        self.v_cruise_kph = max(CS.vEgo, CS.cruiseState.speed) * CV.MS_TO_KPH
+      else:
+        # If set is pressed while overriding, clip cruise speed to minimum of vEgo
+        self.v_cruise_kph = max(self.v_cruise_kph, CS.vEgo * CV.MS_TO_KPH)
 
     self.v_cruise_kph = np.clip(round(self.v_cruise_kph, 1), V_CRUISE_MIN, V_CRUISE_MAX)
 
@@ -144,9 +173,15 @@ class VCruiseHelper:
         self.button_change_states[b.type.raw] = {"standstill": CS.cruiseState.standstill, "enabled": enabled}
 
   def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
-    if self.jve_acc_control and self.CP.brand == "chrysler" and not self.CP.openpilotLongitudinalControl and CS.cruiseState.speed > 0:
-      self.v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
-      self.v_cruise_cluster_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH
+    if self.jve_active and CS.cruiseState.speed > 0:
+      car_v_cruise_kph = CS.cruiseState.speed * CV.MS_TO_KPH
+      if self.jve_resume_requested and self.jve_v_cruise_max != V_CRUISE_UNSET:
+        # Resumed with RES+: restore the driver's previous max speed (stock ACC may hold a speed jvePilot lowered)
+        self.v_cruise_kph = max(self.jve_v_cruise_max, car_v_cruise_kph)
+      else:
+        self.v_cruise_kph = car_v_cruise_kph
+      self.v_cruise_cluster_kph = self.v_cruise_kph
+      self.jve_resume_requested = False
       return
 
     # initializing is handled by the PCM

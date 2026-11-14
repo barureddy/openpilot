@@ -57,7 +57,8 @@ class TogglesLayoutMici(NavScroller):
     jve_acc_toggle = BigParamControl("jvePilot ACC speed control", "JvePilotAccControl",
                                      description="Automatically adjust stock ACC set speed for curves,\n" +
                                                  "traffic, and smooth Eco acceleration.\n" +
-                                                 "When off (default), stock ACC manages speed.")
+                                                 "When off (default), stock ACC manages speed.\n" +
+                                                 "Chrysler/FCA only. Applies next time you engage.")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")

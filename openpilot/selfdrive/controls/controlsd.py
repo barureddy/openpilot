@@ -19,6 +19,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, S
 from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.jvepilot import get_jve_target_speed, jve_supported, update_auto_follow_bars
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -46,8 +47,10 @@ class Controls:
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
-    self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+    self.jve_supported = jve_supported(self.CP)
+    self.jve_acc_control = self.jve_supported and self.params.get_bool("JvePilotAccControl")
     self.jve_auto_resume = self.params.get_bool("JvePilotAutoResume")
+    self.jve_acc_braking = self.params.get_bool("JvePilotAccBraking")
     self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
     self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
     self.jve_follow_bars = 2
@@ -71,8 +74,11 @@ class Controls:
   def update(self):
     self.sm.update(15)
     if self.sm.frame % 100 == 0:
-      self.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+      # Main jvePilot toggle only takes effect while disengaged
+      if not self.sm['selfdriveState'].enabled:
+        self.jve_acc_control = self.jve_supported and self.params.get_bool("JvePilotAccControl")
       self.jve_auto_resume = self.params.get_bool("JvePilotAutoResume")
+      self.jve_acc_braking = self.params.get_bool("JvePilotAccBraking")
       self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
       self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
     if self.sm.updated["extrinsicsCalibration"]:
@@ -131,23 +137,7 @@ class Controls:
 
     # jvePilot hybrid ACC target speed (used by CarController to modulate stock ACC set speed via cruise buttons)
     if self.jve_acc_control:
-      v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
-      eco_headroom = {0: 5.0, 1: 3.0, 2: 1.8}.get(self.jve_acc_eco, 3.0)
-      if len(long_plan.speeds) > 0:
-        lookahead_idx = min(5, len(long_plan.speeds) - 1)
-        v_plan = min(float(long_plan.speeds[lookahead_idx]), float(CS.vEgo + long_plan.aTarget * 1.5))
-        if long_plan.aTarget < -0.1:
-          # ACC braking: set cruise speed lower than target to help slow the vehicle sooner
-          v_target = min(v_cruise_ms, v_plan, float(CS.vEgo + long_plan.aTarget * 2.5))
-        elif v_plan >= v_cruise_ms - 0.5 and CS.vEgo >= v_cruise_ms - 2.0:
-          v_target = v_cruise_ms
-        else:
-          v_target = min(v_cruise_ms, max(v_plan, float(CS.vEgo + long_plan.aTarget * 1.0)))
-          if long_plan.aTarget > 0:
-            v_target = min(v_target, float(CS.vEgo + eco_headroom))
-        actuators.speed = float(max(0.0, v_target))
-      else:
-        actuators.speed = float(max(0.0, v_cruise_ms))
+      actuators.speed = get_jve_target_speed(CS, long_plan, model_v2, self.jve_acc_eco, self.jve_acc_braking)
     else:
       actuators.speed = 0.0
 
@@ -193,8 +183,11 @@ class Controls:
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and self.CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    CC.cruiseControl.resume = (CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop and
-                               self.jve_auto_resume and not CS.brakePressed and not CS.gasPressed and not CS.accFaulted)
+    CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
+    if self.jve_supported:
+      # jvePilot Auto Resume toggle and pedal/fault guards only apply to Chrysler stock-ACC cars
+      CC.cruiseControl.resume = (CC.cruiseControl.resume and self.jve_auto_resume and
+                                 not CS.brakePressed and not CS.gasPressed and not CS.accFaulted)
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)
@@ -204,20 +197,11 @@ class Controls:
     if not CC.enabled or not CS.cruiseState.enabled:
       self.jve_auto_follow_override = False
     elif any(not be.pressed and be.type == car.CarState.ButtonEvent.Type.gapAdjustCruise for be in CS.buttonEvents):
-      self.jve_auto_follow_override = not self.jve_auto_follow_override
+      # Any manual distance button press hands follow distance back to the driver until the next engagement
+      self.jve_auto_follow_override = True
 
     if self.jve_acc_control and self.jve_auto_follow in (1, 2, 3) and not self.jve_auto_follow_override:
-      # Speed thresholds (m/s) for 1->2, 2->3, and 3->4 follow distance bars with 0.8 m/s hysteresis
-      thresholds = {
-        1: (5.4, 11.2, 18.8),   # Relaxed: 12 / 25 / 42 mph
-        2: (6.7, 13.4, 22.4),   # Standard: 15 / 30 / 50 mph
-        3: (8.0, 16.1, 25.9),   # Aggressive: 18 / 36 / 58 mph
-      }[self.jve_auto_follow]
-      hyst = 0.8
-      while self.jve_follow_bars < 4 and CS.vEgo > thresholds[self.jve_follow_bars - 1] + hyst:
-        self.jve_follow_bars += 1
-      while self.jve_follow_bars > 1 and CS.vEgo < thresholds[self.jve_follow_bars - 2] - hyst:
-        self.jve_follow_bars -= 1
+      self.jve_follow_bars = update_auto_follow_bars(self.jve_follow_bars, CS.vEgo, self.jve_auto_follow)
       hudControl.leadDistanceBars = self.jve_follow_bars
     elif self.jve_acc_control:
       hudControl.leadDistanceBars = 0

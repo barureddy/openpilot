@@ -21,9 +21,14 @@ DESCRIPTIONS = {
   "JvePilotAccControl": tr_noop(
     "Use jvePilot hybrid speed control to automatically adjust your vehicle's Adaptive Cruise Control set speed " +
     "for upcoming curves, traffic, and smooth Eco acceleration using virtual steering wheel cruise buttons. " +
-    "When disabled (default), the vehicle's stock Adaptive Cruise Control manages speed."
+    "When disabled (default), the vehicle's stock Adaptive Cruise Control manages speed. " +
+    "Chrysler/Jeep/Dodge/Ram only. Changes take effect the next time you engage."
   ),
   "JvePilotAutoResume": tr_noop("Automatically press ACC Resume when your vehicle comes to a complete stop behind a lead vehicle and traffic starts moving."),
+  "JvePilotAccBraking": tr_noop(
+    "When slowing for traffic, set the ACC speed below the target speed so the vehicle starts slowing sooner. " +
+    "Set speed is only lowered for leads the driving model is confident about."
+  ),
   "JvePilotSlowInTurns": tr_noop("Automatically reduce ACC set speed when approaching and driving through curves."),
   "JvePilotAutoFollow": tr_noop("Automatically adjust ACC follow distance bars and time gap based on vehicle speed."),
   "JvePilotAccEco": tr_noop("Limit how far above your current speed openpilot sets the ACC target speed when accelerating for smoother throttle response."),
@@ -78,6 +83,12 @@ class TogglesLayout(Widget):
       "JvePilotAutoResume": (
         lambda: tr("jvePilot Auto Resume from Stop"),
         DESCRIPTIONS["JvePilotAutoResume"],
+        "speed_limit.png",
+        False,
+      ),
+      "JvePilotAccBraking": (
+        lambda: tr("jvePilot ACC Braking"),
+        DESCRIPTIONS["JvePilotAccBraking"],
         "speed_limit.png",
         False,
       ),
@@ -182,7 +193,7 @@ class TogglesLayout(Widget):
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
-      elif param == "JvePilotAutoResume":
+      elif param == "JvePilotAccBraking":
         self._toggles["JvePilotSlowInTurns"] = self._jve_slow_in_turns_setting
         self._toggles["JvePilotAutoFollow"] = self._jve_auto_follow_setting
         self._toggles["JvePilotAccEco"] = self._jve_acc_eco_setting
@@ -228,7 +239,7 @@ class TogglesLayout(Widget):
         # no long for now
         self._toggles["ExperimentalMode"].action_item.set_enabled(False)
         self._toggles["ExperimentalMode"].action_item.set_state(False)
-        self._long_personality_setting.action_item.set_enabled(self._params.get_bool("JvePilotAccControl"))
+        self._long_personality_setting.action_item.set_enabled(self._jve_available() and self._params.get_bool("JvePilotAccControl"))
         self._params.remove("ExperimentalMode")
 
         unavailable = tr("Experimental mode is currently unavailable on this car since the car's stock ACC is used for longitudinal control.")
@@ -246,20 +257,31 @@ class TogglesLayout(Widget):
       self._toggles["ExperimentalMode"].set_description(e2e_description)
 
     self._update_experimental_mode_icon()
-    jve_enabled = self._params.get_bool("JvePilotAccControl")
+
+    # refresh toggles from params to mirror external changes (before applying jvePilot enable states below)
+    for param in self._toggle_defs:
+      self._toggles[param].action_item.set_state(self._params.get_bool(param))
+
+    # jvePilot settings only apply to Chrysler/FCA cars using stock ACC
+    jve_available = self._jve_available()
+    self._toggles["JvePilotAccControl"].action_item.set_enabled(jve_available)
+    self._toggles["JvePilotAutoResume"].action_item.set_enabled(jve_available)
+    jve_enabled = jve_available and self._params.get_bool("JvePilotAccControl")
+    self._toggles["JvePilotAccBraking"].action_item.set_enabled(jve_enabled)
     self._jve_slow_in_turns_setting.action_item.set_enabled(jve_enabled)
     self._jve_auto_follow_setting.action_item.set_enabled(jve_enabled)
     self._jve_acc_eco_setting.action_item.set_enabled(jve_enabled)
-
-    # TODO: make a param control list item so we don't need to manage internal state as much here
-    # refresh toggles from params to mirror external changes
-    for param in self._toggle_defs:
-      self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
     # these toggles need restart, block while engaged
     for toggle_def in self._toggle_defs:
       if self._toggle_defs[toggle_def][3] and toggle_def not in self._locked_toggles:
         self._toggles[toggle_def].action_item.set_enabled(not ui_state.engaged)
+
+  def _jve_available(self) -> bool:
+    CP = ui_state.CP
+    if CP is None:
+      return True  # car not known yet (offroad before first drive); settings are still scoped at runtime
+    return CP.brand == "chrysler" and CP.pcmCruise and not CP.openpilotLongitudinalControl
 
   def _render(self, rect):
     self._scroller.render(rect)

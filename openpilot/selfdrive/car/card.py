@@ -150,7 +150,9 @@ class Car:
     self.params.put("CarParamsPersistent", cp_bytes)
 
     self.v_cruise_helper = VCruiseHelper(self.CP)
-    self.v_cruise_helper.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+    # jvePilot toggle is only applied while disengaged so the tracked set speed can't jump mid-drive
+    self.jve_acc_control_param = self.params.get_bool("JvePilotAccControl")
+    self.v_cruise_helper.jve_acc_control = self.jve_acc_control_param
 
     self.is_metric = self.params.get_bool("IsMetric")
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
@@ -181,6 +183,8 @@ class Car:
     if can_rcv_valid and REPLAY:
       self.can_log_mono_time = messaging.log_from_bytes(can_strs[0]).logMonoTime
 
+    if not self.sm['carControl'].enabled:
+      self.v_cruise_helper.jve_acc_control = self.jve_acc_control_param
     self.v_cruise_helper.update_v_cruise(CS, self.sm['carControl'].enabled, self.is_metric)
     if self.sm['carControl'].enabled and not self.CC_prev.enabled:
       # Use CarState w/ buttons from the step selfdrived enables on
@@ -257,7 +261,7 @@ class Car:
     while not evt.is_set():
       self.is_metric = self.params.get_bool("IsMetric")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
-      self.v_cruise_helper.jve_acc_control = self.params.get_bool("JvePilotAccControl")
+      self.jve_acc_control_param = self.params.get_bool("JvePilotAccControl")
       time.sleep(0.1)
 
   def card_thread(self):

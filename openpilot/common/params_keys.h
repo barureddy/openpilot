@@ -68,6 +68,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"IsTestedBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"JoystickDebugMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
     {"JvePilotAccControl", {PERSISTENT, BOOL, "0"}},
+    {"JvePilotAccBraking", {PERSISTENT, BOOL, "1"}},
     {"JvePilotAccEco", {PERSISTENT, INT, "1"}},
     {"JvePilotAutoFollow", {PERSISTENT, INT, "2"}},
     {"JvePilotAutoResume", {PERSISTENT, BOOL, "1"}},
