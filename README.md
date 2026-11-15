@@ -41,7 +41,7 @@ Quick start: `bash <(curl -fsSL openpilot.comma.ai)`
 jvePilot Hybrid ACC for Jeep Cherokee (KL / CUSW) & FCA Vehicles
 ------
 
-This branch ports **jvePilot**’s Hybrid Adaptive Cruise Control (ACC) longitudinal speed-control suite to modern `openpilot` and `opendbc`, with full support for **CUSW** vehicles (2014–2018 Jeep Cherokee KL using `CRUISE_BUTTONS` `0x2FA`) as well as non-CUSW FCA vehicles (Chrysler Pacifica, Jeep Grand Cherokee, Ram using `CRUISE_BUTTONS` `0x23B`).
+This branch ports **jvePilot**’s Hybrid Adaptive Cruise Control (ACC) longitudinal speed-control suite to modern `openpilot` and `opendbc`, with full support for **CUSW** vehicles (2014–2023 Jeep Cherokee KL using `CRUISE_BUTTONS` `0x2FA`) as well as non-CUSW FCA vehicles (Chrysler Pacifica, Jeep Grand Cherokee, Ram using `CRUISE_BUTTONS` `0x23B`).
 
 Because FCA vehicles with factory DASM/ACC keep the stock radar in control of gas and brake actuators, **jvePilot** bridges openpilot's longitudinal planner (`modelV2` vision + lead tracking) with the vehicle's stock ACC by transmitting virtual steering-wheel cruise button presses (`ACC_Accel` / `Cruise +`, `ACC_Decel` / `Cruise -`, `ACC_Resume`, `ACC_Cancel`, `ACC_Distance_Inc`, `ACC_Distance_Dec`) over the powertrain CAN bus.
 
@@ -92,12 +92,12 @@ All `jvePilot` settings are located in **Settings → Toggles** on the device UI
 ### Known Limitations / Still Unverified on a CUSW Vehicle
 
 > [!WARNING]
-> This is a custom, unofficial branch. CUSW (2014–2018 Jeep Cherokee) is the primary target. It has passed unit tests, Panda safety tests, and a CAN-level CUSW closed-loop simulation (`opendbc/car/chrysler/tests/test_chrysler_cusw_sim.py`), but not on-car validation. Test first in a safe, controlled setting with stock ACC as the default.
+> This is a custom, unofficial branch. CUSW (2014–2023 Jeep Cherokee KL) is the primary target. It has passed unit tests, Panda safety tests, and a CAN-level CUSW closed-loop simulation (`opendbc/car/chrysler/tests/test_chrysler_cusw_sim.py`), but not on-car validation. Test first in a safe, controlled setting with stock ACC as the default.
 
 - **Button press registration**: single injected `CRUISE_BUTTONS` frames are proven upstream for `Cancel`/`Resume`, but not yet confirmed for `Accel`/`Decel`/`Distance` on CUSW.
 - **`ACC_HUD` timing**: the real CUSW update rate is unknown. The CUSW simulation test passes with `ACC_HUD` at 2–10 Hz and up to `300 ms` delay.
-- **`ACC_HUD["ACC_SET_SPEED_KMH"]` units on mph-display cars**: assumed to be km/h as named in the DBC. If a US-market Cherokee actually reports mph here, the set speed shown and tracked by openpilot would be wrong.
-- **Stop-and-go on 2014–2018 Cherokee**: how long stock ACC holds at a stop before needing `RES` or cancelling is not modeled.
+- **`ACC_HUD["ACC_SET_SPEED_KMH"]` units on US mph cars**: openpilot defaults to **mph** (`IsMetric = False`, 1 mph button increments, mph HUD display), and converts `ACC_HUD["ACC_SET_SPEED_KMH"]` from km/h on CAN (as mapped on the US 2019 Jeep Cherokee in `chrysler_cusw.dbc`). If any 2014–2023 US Cherokee broadcasts mph directly in that signal instead of km/h, a single drive log will confirm it immediately.
+- **Stop-and-go on 2014–2023 Cherokee**: how long stock ACC holds at a stop before needing `RES` or cancelling is not modeled.
 - **Follow-distance mapping**: CUSW `ACC_HUD["DISTANCE_SETTING"] + 1` is assumed to equal the bar count, with `ACC_Distance_Inc` adding a bar. If wrong, Auto Follow disables itself for the engagement.
 - **`CLUSTER_1["SPEEDOMETER"]` scaling** on CUSW should be checked against the dash.
 - **ACC fault signal on CUSW** has not been identified, so `accFaulted` is always `False` on CUSW.
