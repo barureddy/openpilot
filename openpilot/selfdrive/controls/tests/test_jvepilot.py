@@ -94,3 +94,38 @@ def test_curve_slowdown_not_affected_by_lead_gate():
   # cruise-sourced deceleration (e.g. slow-in-turns) still lowers the set speed with no lead present
   v = get_jve_target_speed(*_inputs(v_ego=30.0, a_target=-1.0, plan_v=28.0, source="cruise"), eco=1, acc_braking=False)
   assert v < 30.0
+
+
+def test_moderate_confidence_lead_lowers_set_speed():
+  # 0.50-0.69 prob leads tracked by longitudinal MPC must still lower the set speed
+  v = get_jve_target_speed(*_inputs(v_ego=20.0, v_cruise_kph=80.0, acc_set_kph=80.0, a_target=-0.8, plan_v=16.0,
+                                    source="lead0", lead_probs=(0.55,)), eco=1, acc_braking=True)
+  assert v < 80.0 * CV.KPH_TO_MS
+
+
+def test_decel_never_raises_set_speed_above_current_acc_speed():
+  # When vCruise drifted above the current ACC set speed, braking for a lead must never command a higher set speed (RES+)
+  v = get_jve_target_speed(*_inputs(v_ego=25.0, v_cruise_kph=113.0, acc_set_kph=72.0, a_target=-0.4, plan_v=24.0,
+                                    source="lead0", lead_probs=(0.8,)), eco=1, acc_braking=False)
+  assert v <= 72.0 * CV.KPH_TO_MS + 1e-6
+
+
+def test_desire_helper_aborts_lane_change_on_blindspot():
+  import sys
+  from types import SimpleNamespace
+  sys.modules.setdefault("setproctitle", SimpleNamespace(getproctitle=lambda: "", setproctitle=lambda _: None))
+  from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneChangeState
+  dh = DesireHelper()
+  v_ego = 25.0
+  # Blinker on -> preLaneChange
+  dh.update(car.CarState(vEgo=v_ego, leftBlinker=True), lateral_active=True, lane_change_prob=1.0)
+  assert dh.lane_change_state == LaneChangeState.preLaneChange
+  # Steering nudge with clear blindspot -> laneChangeStarting
+  dh.update(car.CarState(vEgo=v_ego, leftBlinker=True, steeringPressed=True, steeringTorque=10.0),
+            lateral_active=True, lane_change_prob=1.0)
+  assert dh.lane_change_state == LaneChangeState.laneChangeStarting
+  assert dh.desire == log.Desire.laneChangeLeft
+  # Car detected in blindspot mid-lane-change -> immediately aborts back to preLaneChange and clears desire
+  dh.update(car.CarState(vEgo=v_ego, leftBlinker=True, leftBlindspot=True), lateral_active=True, lane_change_prob=1.0)
+  assert dh.lane_change_state == LaneChangeState.preLaneChange
+  assert dh.desire == log.Desire.none

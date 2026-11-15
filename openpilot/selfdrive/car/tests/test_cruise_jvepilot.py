@@ -116,3 +116,49 @@ def test_gas_set_minus_syncs_to_current_speed():
   press, release = tap(ButtonType.decelCruise)
   d.step(cs(80, v_ego=v_ego, gas=True, buttons=press), enabled=True)
   assert abs(d.step(cs(80, v_ego=v_ego, gas=True, buttons=release), enabled=True) - v_ego * CV.MS_TO_KPH) < 0.2
+
+
+def test_imperial_long_press_set_minus_matches_fca_mph():
+  d = JveDriver(chrysler_cp())
+  d.engage(113)  # 70 mph
+  press, release = tap(ButtonType.decelCruise)
+  d.step(cs(113, buttons=press), enabled=True)
+  for expected_mph in (65, 60, 55, 50):
+    for _ in range(50):
+      v_kph = d.step(cs(113), enabled=True)
+    assert round(v_kph * CV.KPH_TO_MPH) == expected_mph
+  d.step(cs(80, buttons=release), enabled=True)
+  assert round(d.h.v_cruise_kph * CV.KPH_TO_MPH) == 50
+
+
+def test_driver_set_minus_hold_syncs_downward_with_car_acc_hud():
+  d = JveDriver(chrysler_cp())
+  d.engage(97)  # 60 mph
+  press, release = tap(ButtonType.decelCruise)
+  d.step(cs(97, buttons=press), enabled=True)
+  for _ in range(30):
+    d.step(cs(97), enabled=True)
+  # Jeep PCM jumps to 56 mph (90 km/h) after ~0.32s hold and driver releases SET-
+  d.step(cs(90, buttons=release), enabled=True)
+  assert abs(d.h.v_cruise_kph - 90) < 0.1
+  assert round(d.h.v_cruise_cluster_kph * CV.KPH_TO_MPH) == 56
+
+
+def test_set_minus_engage_on_rising_edge_and_delayed_hud():
+  d = JveDriver(chrysler_cp())
+  d.engage(113)
+  for _ in range(5):
+    d.step(cs(72), enabled=True)
+  d.step(cs(72, enabled=False), enabled=False)
+  # Earlier RES+ while disengaged, then driver engages by pressing SET- (still held on engage frame, HUD updates 10 frames later)
+  res_press, res_release = tap(ButtonType.accelCruise)
+  d.step(cs(90, enabled=False, buttons=res_press), enabled=False)
+  d.step(cs(90, enabled=False, buttons=res_release), enabled=False)
+  set_press, set_release = tap(ButtonType.decelCruise)
+  d.step(cs(90, enabled=True, buttons=set_press), enabled=False)
+  d.step(cs(90, enabled=True), enabled=True)
+  for _ in range(8):
+    d.step(cs(90, enabled=True), enabled=True)
+  # 5 Hz ACC_HUD arrives with new 45 mph (72 km/h) SET- speed
+  v_kph = d.step(cs(72, enabled=True, buttons=set_release), enabled=True)
+  assert abs(v_kph - 72) < 0.1

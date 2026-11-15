@@ -11,6 +11,7 @@ from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority
 from openpilot.common.swaglog import cloudlog
 
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.chrysler.values import CUSW_CARS
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
@@ -113,7 +114,8 @@ class Controls:
     CC.enabled = self.sm['selfdriveState'].enabled
 
     # Check which actuators can be enabled
-    standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
+    min_steer_speed = (self.CP.minSteerSpeed - 2.0) if (self.CP.carFingerprint in CUSW_CARS and not CS.lowSpeedAlert) else self.CP.minSteerSpeed
+    standstill = abs(CS.vEgo) <= max(min_steer_speed, 0.3) or CS.standstill
     CC.latActive = self.sm['selfdriveState'].active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.CP.steerAtStandstill)
     CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and self.CP.openpilotLongitudinalControl

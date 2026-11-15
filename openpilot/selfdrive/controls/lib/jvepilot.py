@@ -31,7 +31,7 @@ BARS_TO_PERSONALITY = {
 
 # Only lower the stock ACC set speed for a lead the driving model is confident about. On radarless
 # CUSW (vision-only leads) this avoids phantom slowdowns; stock ACC radar still handles real leads.
-LEAD_MIN_PROB = 0.7
+LEAD_MIN_PROB = 0.5
 
 
 def jve_supported(CP) -> bool:
@@ -59,25 +59,26 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool) -
   lower the set speed for a low-confidence lead.
   """
   v_cruise = CS.vCruise * CV.KPH_TO_MS
-  if len(long_plan.speeds) == 0:
+  if len(long_plan.speeds) == 0 or CS.cruiseState.standstill:
     return float(max(0.0, v_cruise))
 
   a_target = float(long_plan.aTarget)
   v_ego = float(CS.vEgo)
-  lookahead_idx = min(5, len(long_plan.speeds) - 1)
-  v_plan = min(float(long_plan.speeds[lookahead_idx]), v_ego + a_target * 1.5)
+  near_idx = min(5, len(long_plan.speeds) - 1)
+  far_idx = min(12, len(long_plan.speeds) - 1)
+  v_plan = min(float(long_plan.speeds[near_idx]), float(long_plan.speeds[far_idx]), v_ego + a_target * 1.5)
 
-  if a_target < -0.1:
+  if long_plan.shouldStop:
+    v_target = 0.0
+  elif a_target < -0.1:
     v_target = min(v_cruise, v_plan)
     if acc_braking:
       # ACC Braking: set the cruise speed below the target so the car starts slowing sooner
       v_target = min(v_target, v_ego + a_target * 2.5)
-  elif v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0:
+  elif a_target <= 0 or (v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0):
     v_target = v_cruise
   else:
-    v_target = min(v_cruise, max(v_plan, v_ego + a_target))
-    if a_target > 0:
-      v_target = min(v_target, v_ego + ECO_HEADROOM.get(eco, ECO_HEADROOM[1]))
+    v_target = min(v_cruise, v_ego + ECO_HEADROOM.get(eco, ECO_HEADROOM[1]))
 
   # Don't lower the stock ACC set speed for a low-confidence (possibly phantom) lead.
   # NOTE: capnp enum readers don't hash like ints, so compare with == rather than using a dict lookup.
@@ -88,5 +89,9 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool) -
     lead_prob = float(leads[lead_idx].prob) if len(leads) > lead_idx else 0.0
     if lead_prob < LEAD_MIN_PROB:
       v_target = max(v_target, float(CS.cruiseState.speed))
+
+  # Never raise the stock ACC set speed (which sends RES+ / ACC_Accel) while the planner wants to decelerate
+  if (a_target < -0.05 or long_plan.shouldStop) and CS.cruiseState.speed > 0:
+    v_target = min(v_target, float(CS.cruiseState.speed))
 
   return float(max(0.0, v_target))

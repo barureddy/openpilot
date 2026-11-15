@@ -59,9 +59,12 @@ class DesireHelper:
       elif self.lane_change_state == LaneChangeState.laneChangeStarting:
         self.lane_change_timer += DT_MDL
 
-        if lane_change_prob < 0.02 and self.lane_change_timer >= LANE_CHANGE_START_TIME:
+        blindspot_detected = ((carstate.leftBlindspot and self.lane_change_direction == LaneChangeDirection.left) or
+                              (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
+
+        if blindspot_detected or (lane_change_prob < 0.02 and self.lane_change_timer >= LANE_CHANGE_START_TIME):
           self.lane_change_timer = 0.0
-          if one_blinker:
+          if one_blinker and not below_lane_change_speed:
             self.lane_change_state = LaneChangeState.preLaneChange
             self.lane_change_direction = self.get_lane_change_direction(carstate)
           else:

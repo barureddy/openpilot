@@ -2,6 +2,7 @@ from openpilot.cereal import log
 from opendbc.car.structs import car
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.chrysler.values import CUSW_CARS
 from opendbc.car.interfaces import MAX_CTRL_SPEED
 from opendbc.car.toyota.values import ToyotaFlags
 
@@ -28,8 +29,8 @@ class CarEvents:
 
     events = self.create_common_events(CS, CS_prev)
 
-    if self.CP.brand == 'chrysler':
-      # Low speed steer alert hysteresis logic
+    if self.CP.brand == 'chrysler' and self.CP.carFingerprint not in CUSW_CARS:
+      # Low speed steer alert hysteresis logic (CUSW sets CS.lowSpeedAlert directly in CarState)
       if self.CP.minSteerSpeed > 0. and CS.vEgo < (self.CP.minSteerSpeed + 0.5):
         self.low_speed_alert = True
       elif CS.vEgo > (self.CP.minSteerSpeed + 1.):
