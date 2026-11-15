@@ -110,6 +110,14 @@ def test_decel_never_raises_set_speed_above_current_acc_speed():
   assert v <= 72.0 * CV.KPH_TO_MS + 1e-6
 
 
+def test_confident_lead_caps_target_speed_before_hard_braking():
+  # SEG16 10:49:55 scenario: slow lead ahead caps planned trajectory at ~5.8 m/s (13 mph) while aTarget transitions +0.4 -> -0.05
+  for a_target in (0.4, 0.05, -0.05):
+    v = get_jve_target_speed(*_inputs(v_ego=7.5, v_cruise_kph=95.0, acc_set_kph=95.0, a_target=a_target, plan_v=5.8,
+                                      source="lead1", lead_probs=(0.58, 0.85)), eco=1, acc_braking=True)
+    assert v <= 5.8 + 1e-6, a_target
+
+
 def test_desire_helper_aborts_lane_change_on_blindspot():
   import sys
   from types import SimpleNamespace

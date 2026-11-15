@@ -162,3 +162,22 @@ def test_set_minus_engage_on_rising_edge_and_delayed_hud():
   # 5 Hz ACC_HUD arrives with new 45 mph (72 km/h) SET- speed
   v_kph = d.step(cs(72, enabled=True, buttons=set_release), enabled=True)
   assert abs(v_kph - 72) < 0.1
+
+
+def test_driver_set_plus_syncs_to_car_hud_when_max_was_higher():
+  # SEG5 scenario: comma vCruise was at 65 mph while Jeep dashboard ACC_HUD was at 55 mph;
+  # when driver holds SET+ and Jeep dashboard steps 55 -> 56 -> 60 mph, comma vCruise must sync to 60 mph (not 70 mph)
+  d = JveDriver(chrysler_cp())
+  d.engage(65 * CV.MPH_TO_KPH)
+  for _ in range(5):
+    d.step(cs(55 * CV.MPH_TO_KPH), enabled=True)
+  press, release = tap(ButtonType.accelCruise)
+  d.step(cs(55 * CV.MPH_TO_KPH, buttons=press), enabled=True)
+  for _ in range(8):
+    d.step(cs(55 * CV.MPH_TO_KPH), enabled=True)
+  d.step(cs(56 * CV.MPH_TO_KPH), enabled=True)
+  for _ in range(20):
+    d.step(cs(56 * CV.MPH_TO_KPH), enabled=True)
+  v_kph = d.step(cs(60 * CV.MPH_TO_KPH, buttons=release), enabled=True)
+  assert round(v_kph * CV.KPH_TO_MPH) == 60
+  assert round(d.h.v_cruise_cluster_kph * CV.KPH_TO_MPH) == 60

@@ -67,6 +67,11 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool) -
   near_idx = min(5, len(long_plan.speeds) - 1)
   far_idx = min(12, len(long_plan.speeds) - 1)
   v_plan = min(float(long_plan.speeds[near_idx]), float(long_plan.speeds[far_idx]), v_ego + a_target * 1.5)
+  v_traj = max(float(long_plan.speeds[near_idx]), float(long_plan.speeds[far_idx]), float(long_plan.speeds[-1]))
+
+  # NOTE: capnp enum readers don't hash like ints, so compare with == rather than using a dict lookup.
+  source = long_plan.longitudinalPlanSource
+  lead_idx = 0 if source == LongitudinalPlanSource.lead0 else (1 if source == LongitudinalPlanSource.lead1 else None)
 
   if long_plan.shouldStop:
     v_target = 0.0
@@ -75,15 +80,16 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool) -
     if acc_braking:
       # ACC Braking: set the cruise speed below the target so the car starts slowing sooner
       v_target = min(v_target, v_ego + a_target * 2.5)
-  elif a_target <= 0 or (v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0):
+  elif v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0:
     v_target = v_cruise
+  elif a_target <= 0:
+    v_target = min(v_cruise, v_plan) if lead_idx is not None else v_cruise
   else:
     v_target = min(v_cruise, v_ego + ECO_HEADROOM.get(eco, ECO_HEADROOM[1]))
+    if lead_idx is not None:
+      v_target = min(v_target, v_traj)
 
   # Don't lower the stock ACC set speed for a low-confidence (possibly phantom) lead.
-  # NOTE: capnp enum readers don't hash like ints, so compare with == rather than using a dict lookup.
-  source = long_plan.longitudinalPlanSource
-  lead_idx = 0 if source == LongitudinalPlanSource.lead0 else (1 if source == LongitudinalPlanSource.lead1 else None)
   if lead_idx is not None:
     leads = model_v2.leadsV3
     lead_prob = float(leads[lead_idx].prob) if len(leads) > lead_idx else 0.0

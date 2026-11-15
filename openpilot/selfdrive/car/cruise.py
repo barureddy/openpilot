@@ -105,11 +105,11 @@ class VCruiseHelper:
                                abs(car_v_cruise_kph - self.jve_car_speed_prev) > 0.1)
           if car_speed_changed and self.jve_driver_btn_frames > 0 and not CS.gasPressed:
             if (self.jve_driver_btn_type in (ButtonType.decelCruise, ButtonType.setCruise) and
-                car_v_cruise_kph < self.v_cruise_kph):
+                car_v_cruise_kph < self.jve_car_speed_prev):
               self.v_cruise_kph = car_v_cruise_kph
               self.jve_button_synced = True
             elif (self.jve_driver_btn_type in (ButtonType.accelCruise, ButtonType.resumeCruise) and
-                  car_v_cruise_kph > self.v_cruise_kph):
+                  car_v_cruise_kph > self.jve_car_speed_prev):
               self.v_cruise_kph = car_v_cruise_kph
               self.jve_button_synced = True
 
