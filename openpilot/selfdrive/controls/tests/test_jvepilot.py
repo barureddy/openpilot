@@ -84,6 +84,13 @@ def test_low_confidence_lead_does_not_lower_set_speed():
     assert v >= acc_set * CV.KPH_TO_MS - 1e-6, (source, probs)
 
 
+def test_radar_lead_distance_overrides_low_vision_prob_and_caps_speed():
+  v = get_jve_target_speed(*_inputs(v_ego=27.0, acc_set_kph=100.0, a_target=-1.5, plan_v=24.0,
+                                    source="lead0", lead_probs=(0.2,)), eco=1, acc_braking=True,
+                           radar_lead_distance=20.0)
+  assert v <= (20.0 - 4.0) / 1.4 + 1e-6
+
+
 def test_confident_lead_lowers_set_speed():
   v = get_jve_target_speed(*_inputs(v_ego=27.0, acc_set_kph=100.0, a_target=-1.5, plan_v=24.0,
                                     source="lead1", lead_probs=(0.2, 0.9)), eco=1, acc_braking=True)
