@@ -84,11 +84,26 @@ def test_low_confidence_lead_does_not_lower_set_speed():
     assert v >= acc_set * CV.KPH_TO_MS - 1e-6, (source, probs)
 
 
-def test_radar_lead_distance_overrides_low_vision_prob_and_caps_speed():
+def test_radar_lead_distance_overrides_low_vision_prob():
   v = get_jve_target_speed(*_inputs(v_ego=27.0, acc_set_kph=100.0, a_target=-1.5, plan_v=24.0,
                                     source="lead0", lead_probs=(0.2,)), eco=1, acc_braking=True,
                            radar_lead_distance=20.0)
-  assert v <= (20.0 - 4.0) / 1.4 + 1e-6
+  assert v < 100.0 * CV.KPH_TO_MS
+
+
+def test_fast_highway_lead_does_not_slow_below_planner_target():
+  v = get_jve_target_speed(*_inputs(v_ego=27.0, acc_set_kph=105.0, a_target=-0.3, plan_v=25.5,
+                                    source="lead0", lead_probs=(0.95,)), eco=1, acc_braking=True,
+                           radar_lead_distance=23.0)
+  assert v >= 25.0 - 2.5 * 0.3 - 1e-6
+
+
+def test_standstill_holds_current_acc_set_speed():
+  CS, plan, model = _inputs(v_ego=0.0, v_cruise_kph=105.0, acc_set_kph=48.0)
+  CS_rw = car.CarState.new_message(**CS.to_dict())
+  CS_rw.cruiseState.standstill = True
+  v = get_jve_target_speed(CS_rw.as_reader(), plan, model, eco=1, acc_braking=True)
+  assert abs(v - 48.0 * CV.KPH_TO_MS) < 1e-3
 
 
 def test_confident_lead_lowers_set_speed():

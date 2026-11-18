@@ -59,8 +59,10 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
   lower the set speed for a low-confidence lead unless confirmed by hardware radar.
   """
   v_cruise = CS.vCruise * CV.KPH_TO_MS
-  if len(long_plan.speeds) == 0 or CS.cruiseState.standstill:
+  if len(long_plan.speeds) == 0:
     return float(max(0.0, v_cruise))
+  if CS.cruiseState.standstill:
+    return float(max(0.0, float(CS.cruiseState.speed) if CS.cruiseState.speed > 0 else v_cruise))
 
   a_target = float(long_plan.aTarget)
   v_ego = float(CS.vEgo)
@@ -96,9 +98,6 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
     lead_prob = float(leads[lead_idx].prob) if len(leads) > lead_idx else 0.0
     if lead_prob < LEAD_MIN_PROB:
       v_target = max(v_target, float(CS.cruiseState.speed))
-
-  if radar_lead and radar_lead_distance < v_ego * 1.4 + 4.0:
-    v_target = min(v_target, max(0.0, (radar_lead_distance - 4.0) / 1.4))
 
   # Never raise the stock ACC set speed (which sends RES+ / ACC_Accel) while the planner wants to decelerate
   if (a_target < -0.05 or long_plan.shouldStop) and CS.cruiseState.speed > 0:
