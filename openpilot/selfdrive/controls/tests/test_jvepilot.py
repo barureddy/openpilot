@@ -1,8 +1,9 @@
 from opendbc.car.structs import car
 from openpilot.cereal import log
 from openpilot.common.constants import CV
-from openpilot.selfdrive.controls.lib.jvepilot import (AUTO_FOLLOW_HYST, AUTO_FOLLOW_THRESHOLDS, BARS_TO_PERSONALITY, LEAD_MIN_PROB,
-                                                       get_jve_target_speed, jve_supported, update_auto_follow_bars)
+from openpilot.selfdrive.controls.lib.jvepilot import (AUTO_FOLLOW_HYST, AUTO_FOLLOW_THRESHOLDS, BARS_TO_PERSONALITY,
+                                                       JVE_MIN_TARGET_SPEED, LEAD_MIN_PROB, get_jve_target_speed,
+                                                       jve_supported, update_auto_follow_bars)
 
 
 def test_jve_supported():
@@ -146,18 +147,18 @@ def test_should_stop_and_hard_braking_return_positive_target():
   plan_rw = log.LongitudinalPlan.new_message(**plan.to_dict())
   plan_rw.shouldStop = True
   v_stop = get_jve_target_speed(CS, plan_rw.as_reader(), model, eco=1, acc_braking=True)
-  assert 0.0 < v_stop <= 1.0
+  assert v_stop == JVE_MIN_TARGET_SPEED
 
   v_hard_brake = get_jve_target_speed(*_inputs(v_ego=5.0, v_cruise_kph=72.0, acc_set_kph=51.5, a_target=-3.0, plan_v=2.0),
                                       eco=1, acc_braking=True)
-  assert 0.0 < v_hard_brake <= 1.0
+  assert v_hard_brake == JVE_MIN_TARGET_SPEED
 
 
 def test_desire_helper_aborts_lane_change_on_blindspot():
   import sys
   from types import SimpleNamespace
   sys.modules.setdefault("setproctitle", SimpleNamespace(getproctitle=lambda: "", setproctitle=lambda _: None))
-  from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneChangeState
+  from openpilot.selfdrive.controls.lib.desire_helper import BLINDSPOT_ABORT_FRAMES, DesireHelper, LaneChangeState
   dh = DesireHelper()
   v_ego = 25.0
   # Blinker on -> preLaneChange
@@ -168,7 +169,14 @@ def test_desire_helper_aborts_lane_change_on_blindspot():
             lateral_active=True, lane_change_prob=1.0)
   assert dh.lane_change_state == LaneChangeState.laneChangeStarting
   assert dh.desire == log.Desire.laneChangeLeft
-  # Car detected in blindspot mid-lane-change -> immediately aborts back to preLaneChange and clears desire
+  # Transient single-frame blindspot spike does not abort
   dh.update(car.CarState(vEgo=v_ego, leftBlinker=True, leftBlindspot=True), lateral_active=True, lane_change_prob=1.0)
+  assert dh.lane_change_state == LaneChangeState.laneChangeStarting
+  dh.update(car.CarState(vEgo=v_ego, leftBlinker=True, leftBlindspot=False), lateral_active=True, lane_change_prob=1.0)
+  assert dh.lane_change_state == LaneChangeState.laneChangeStarting
+  assert dh.desire == log.Desire.laneChangeLeft
+  # Sustained blindspot across BLINDSPOT_ABORT_FRAMES aborts back to preLaneChange and clears desire
+  for _ in range(BLINDSPOT_ABORT_FRAMES):
+    dh.update(car.CarState(vEgo=v_ego, leftBlinker=True, leftBlindspot=True), lateral_active=True, lane_change_prob=1.0)
   assert dh.lane_change_state == LaneChangeState.preLaneChange
   assert dh.desire == log.Desire.none

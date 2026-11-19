@@ -20,7 +20,8 @@ from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, S
 from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
-from openpilot.selfdrive.controls.lib.jvepilot import get_jve_target_speed, jve_supported, update_auto_follow_bars
+from openpilot.selfdrive.controls.lib.jvepilot import (AUTO_FOLLOW_DWELL_FRAMES, get_jve_target_speed, jve_supported,
+                                                       update_auto_follow_bars)
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -55,6 +56,7 @@ class Controls:
     self.jve_acc_eco = self.params.get("JvePilotAccEco", return_default=True)
     self.jve_auto_follow = self.params.get("JvePilotAutoFollow", return_default=True)
     self.jve_follow_bars = 2
+    self.jve_follow_dwell = 0
     self.jve_auto_follow_override = False
 
     self.pose_calibrator = PoseCalibrator()
@@ -198,16 +200,27 @@ class Controls:
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
     if not CC.enabled or not CS.cruiseState.enabled:
       self.jve_auto_follow_override = False
+      self.jve_follow_dwell = 0
     elif any(not be.pressed and be.type == car.CarState.ButtonEvent.Type.gapAdjustCruise for be in CS.buttonEvents):
       # Any manual distance button press hands follow distance back to the driver until the next engagement
       self.jve_auto_follow_override = True
+      self.jve_follow_dwell = 0
 
     if self.jve_acc_control and self.jve_auto_follow in (1, 2, 3) and not self.jve_auto_follow_override:
-      self.jve_follow_bars = update_auto_follow_bars(self.jve_follow_bars, CS.vEgo, self.jve_auto_follow)
+      desired_bars = update_auto_follow_bars(self.jve_follow_bars, CS.vEgo, self.jve_auto_follow)
+      if desired_bars != self.jve_follow_bars:
+        self.jve_follow_dwell += 1
+        if self.jve_follow_dwell >= AUTO_FOLLOW_DWELL_FRAMES:
+          self.jve_follow_bars = desired_bars
+          self.jve_follow_dwell = 0
+      else:
+        self.jve_follow_dwell = 0
       hudControl.leadDistanceBars = self.jve_follow_bars
     elif self.jve_acc_control:
+      self.jve_follow_dwell = 0
       hudControl.leadDistanceBars = 0
     else:
+      self.jve_follow_dwell = 0
       hudControl.leadDistanceBars = self.sm['selfdriveState'].personality.raw + 1
     hudControl.visualAlert = self.sm['selfdriveState'].alertHudVisual
 

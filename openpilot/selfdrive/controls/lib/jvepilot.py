@@ -13,13 +13,18 @@ LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
 # ACC Eco: max target-speed lead over current speed while accelerating (m/s), by setting 0=Off, 1=Eco 1, 2=Eco 2
 ECO_HEADROOM = {0: 5.0, 1: 3.0, 2: 1.8}
 
-# Auto Follow: speed thresholds (m/s) for stepping stock ACC follow-distance bars 1->2, 2->3 and 3->4
+# Auto Follow: speed thresholds (m/s) for stepping stock ACC follow-distance bars 1->2, 2->3 and 3->4.
+# Raised above 12-18 mph urban stop-and-go with a ~3.4 mph hysteresis band to prevent 1<->2 bar hunting.
 AUTO_FOLLOW_THRESHOLDS = {
-  1: (5.4, 11.2, 18.8),   # Relaxed profile: 12 / 25 / 42 mph (longer distance sooner)
-  2: (6.7, 13.4, 22.4),   # Standard profile: 15 / 30 / 50 mph
-  3: (8.0, 16.1, 25.9),   # Aggressive profile: 18 / 36 / 58 mph (closer following)
+  1: (7.6, 13.4, 21.5),   # Relaxed profile: 17 / 30 / 48 mph (longer distance sooner)
+  2: (9.4, 16.1, 25.5),   # Standard profile: 21 / 36 / 57 mph
+  3: (11.2, 18.8, 29.1),  # Aggressive profile: 25 / 42 / 65 mph (closer following)
 }
-AUTO_FOLLOW_HYST = 0.8  # m/s (~1.8 mph)
+AUTO_FOLLOW_HYST = 1.5  # m/s (~3.4 mph; 6.7 mph total deadband)
+AUTO_FOLLOW_DWELL_FRAMES = 300  # 3.0 s @ 100 Hz sustained demand before stepping follow-distance bars
+
+# Positive target-speed sentinel (m/s) keeping CC.actuators.speed > 0 whenever jvePilot ACC control is active
+JVE_MIN_TARGET_SPEED = 0.1
 
 # The planner MPC follow gap tracks the stock ACC bar setting so both agree on how closely to follow
 BARS_TO_PERSONALITY = {
@@ -105,4 +110,4 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
 
   # CarController treats CC.actuators.speed == 0.0 as jvePilot disabled; clamp active targets > 0 so
   # shouldStop / hard braking still step stock ACC down to its minimum set speed.
-  return float(max(0.1, v_target))
+  return float(max(JVE_MIN_TARGET_SPEED, v_target))

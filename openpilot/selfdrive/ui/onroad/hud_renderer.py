@@ -1,6 +1,7 @@
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.common.constants import CV
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -67,6 +68,7 @@ class HudRenderer(Widget):
     self.set_speed: float = SET_SPEED_NA
     self.speed: float = 0.0
     self.speed_color: rl.Color = COLORS.WHITE
+    self._a_ego_filter = FirstOrderFilter(0.0, 0.5, 1 / gui_app.target_fps)
     self.v_ego_cluster_seen: bool = False
 
     self._font_semi_bold: rl.Font = gui_app.font(FontWeight.SEMI_BOLD)
@@ -82,6 +84,8 @@ class HudRenderer(Widget):
       self.is_cruise_set = False
       self.set_speed = SET_SPEED_NA
       self.speed = 0.0
+      self._a_ego_filter.x = 0.0
+      self.speed_color = COLORS.WHITE
       return
 
     controls_state = sm['controlsState']
@@ -103,14 +107,16 @@ class HudRenderer(Widget):
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
 
+    a_ego_filt = self._a_ego_filter.update(car_state.aEgo)
     if ui_state.status in (UIStatus.ENGAGED, UIStatus.OVERRIDE):
-      if car_state.brakePressed or car_state.aEgo < -0.15:
+      if car_state.brakePressed or a_ego_filt < -0.30:
         self.speed_color = COLORS.BRAKE
-      elif car_state.gasPressed or car_state.aEgo > 0.15:
+      elif car_state.gasPressed or a_ego_filt > 0.30:
         self.speed_color = COLORS.GAS
-      else:
+      elif abs(a_ego_filt) < 0.10:
         self.speed_color = COLORS.WHITE
     else:
+      self._a_ego_filter.x = 0.0
       self.speed_color = COLORS.WHITE
 
   def _render(self, rect: rl.Rectangle) -> None:

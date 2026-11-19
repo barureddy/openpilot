@@ -8,12 +8,14 @@ LaneChangeDirection = log.LaneChangeDirection
 LANE_CHANGE_SPEED_MIN = 20 * CV.MPH_TO_MS
 LANE_CHANGE_TIME_MAX = 10.
 LANE_CHANGE_START_TIME = 0.5
+BLINDSPOT_ABORT_FRAMES = 3  # 150 ms @ 20 Hz debounce before aborting a lane change on BSM
 
 class DesireHelper:
   def __init__(self):
     self.lane_change_state = LaneChangeState.off
     self.lane_change_direction = LaneChangeDirection.none
     self.lane_change_timer = 0.0
+    self.blindspot_abort_counter = 0
     self.prev_one_blinker = False
     self.desire = log.Desire.none
 
@@ -30,14 +32,17 @@ class DesireHelper:
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
       self.lane_change_timer = 0.0
+      self.blindspot_abort_counter = 0
     else:
       if self.lane_change_state == LaneChangeState.off and one_blinker and not self.prev_one_blinker and not below_lane_change_speed:
         self.lane_change_state = LaneChangeState.preLaneChange
         self.lane_change_timer = 0.0
+        self.blindspot_abort_counter = 0
         # Initialize lane change direction to prevent UI alert flicker
         self.lane_change_direction = self.get_lane_change_direction(carstate)
 
       elif self.lane_change_state == LaneChangeState.preLaneChange:
+        self.blindspot_abort_counter = 0
         # Update lane change direction
         self.lane_change_direction = self.get_lane_change_direction(carstate)
 
@@ -61,9 +66,11 @@ class DesireHelper:
 
         blindspot_detected = ((carstate.leftBlindspot and self.lane_change_direction == LaneChangeDirection.left) or
                               (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
+        self.blindspot_abort_counter = (self.blindspot_abort_counter + 1) if blindspot_detected else 0
 
-        if blindspot_detected or (lane_change_prob < 0.02 and self.lane_change_timer >= LANE_CHANGE_START_TIME):
+        if self.blindspot_abort_counter >= BLINDSPOT_ABORT_FRAMES or (lane_change_prob < 0.02 and self.lane_change_timer >= LANE_CHANGE_START_TIME):
           self.lane_change_timer = 0.0
+          self.blindspot_abort_counter = 0
           if one_blinker and not below_lane_change_speed:
             self.lane_change_state = LaneChangeState.preLaneChange
             self.lane_change_direction = self.get_lane_change_direction(carstate)

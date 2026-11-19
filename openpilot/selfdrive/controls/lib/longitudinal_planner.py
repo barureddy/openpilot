@@ -106,7 +106,8 @@ class LongitudinalPlanner:
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
-    jve_active = self.jve_acc_control and self.jve_supported
+    cc_jve_active = (sm['carControl'].actuators.speed > 0) if sm.seen['carControl'] else self.jve_acc_control
+    jve_active = self.jve_supported and cc_jve_active
     if jve_active and not sm['selfdriveState'].experimentalMode:
       v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego, self.jve_slow_in_turns))
     if sm['controlsState'].forceDecel:
