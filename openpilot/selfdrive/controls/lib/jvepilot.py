@@ -103,4 +103,6 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
   if (a_target < -0.05 or long_plan.shouldStop) and CS.cruiseState.speed > 0:
     v_target = min(v_target, float(CS.cruiseState.speed))
 
-  return float(max(0.0, v_target))
+  # CarController treats CC.actuators.speed == 0.0 as jvePilot disabled; clamp active targets > 0 so
+  # shouldStop / hard braking still step stock ACC down to its minimum set speed.
+  return float(max(0.1, v_target))

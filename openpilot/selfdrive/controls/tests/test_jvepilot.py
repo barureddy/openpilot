@@ -140,6 +140,19 @@ def test_confident_lead_caps_target_speed_before_hard_braking():
     assert v <= 5.8 + 1e-6, a_target
 
 
+def test_should_stop_and_hard_braking_return_positive_target():
+  # CarController gates jvePilot on CC.actuators.speed > 0, so active targets must stay > 0 even when shouldStop is True
+  CS, plan, model = _inputs(v_ego=12.0, v_cruise_kph=72.0, acc_set_kph=51.5, a_target=-1.5, plan_v=0.0)
+  plan_rw = log.LongitudinalPlan.new_message(**plan.to_dict())
+  plan_rw.shouldStop = True
+  v_stop = get_jve_target_speed(CS, plan_rw.as_reader(), model, eco=1, acc_braking=True)
+  assert 0.0 < v_stop <= 1.0
+
+  v_hard_brake = get_jve_target_speed(*_inputs(v_ego=5.0, v_cruise_kph=72.0, acc_set_kph=51.5, a_target=-3.0, plan_v=2.0),
+                                      eco=1, acc_braking=True)
+  assert 0.0 < v_hard_brake <= 1.0
+
+
 def test_desire_helper_aborts_lane_change_on_blindspot():
   import sys
   from types import SimpleNamespace
