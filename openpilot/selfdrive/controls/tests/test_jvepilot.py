@@ -219,6 +219,21 @@ def test_longitudinal_planner_keeps_allow_throttle_for_jve_active():
   assert planner.allow_throttle is True
 
 
+def test_e2e_experimental_mode_modulates_target_speed():
+  # Experimental Mode (longitudinalPlanSource == e2e) modulates ACC set speed smoothly without jumping to v_cruise
+  v_slow = get_jve_target_speed(*_inputs(v_ego=25.0, v_cruise_kph=112.7, acc_set_kph=112.7,
+                                         a_target=-0.5, plan_v=23.0, source="e2e"), eco=1, acc_braking=True)
+  assert v_slow < 25.0
+
+  v_hold = get_jve_target_speed(*_inputs(v_ego=20.0, v_cruise_kph=112.7, acc_set_kph=72.0,
+                                         a_target=0.0, plan_v=20.2, source="e2e"), eco=1, acc_braking=True)
+  assert abs(v_hold - 20.0) < 1e-3
+
+  v_accel = get_jve_target_speed(*_inputs(v_ego=20.0, v_cruise_kph=112.7, acc_set_kph=72.0,
+                                          a_target=0.5, plan_v=20.2, source="e2e"), eco=1, acc_braking=True)
+  assert abs(v_accel - (20.0 + 0.5 * 3.5)) < 1e-3
+
+
 def test_desire_helper_aborts_lane_change_on_blindspot():
   import sys
   from types import SimpleNamespace

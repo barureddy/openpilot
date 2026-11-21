@@ -79,6 +79,7 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
   # NOTE: capnp enum readers don't hash like ints, so compare with == rather than using a dict lookup.
   source = long_plan.longitudinalPlanSource
   lead_idx = 0 if source == LongitudinalPlanSource.lead0 else (1 if source == LongitudinalPlanSource.lead1 else None)
+  e2e_active = (source == LongitudinalPlanSource.e2e)
   radar_lead = 0.0 < radar_lead_distance < 250.0
 
   if long_plan.shouldStop:
@@ -91,14 +92,14 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
   elif v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0:
     v_target = v_cruise
   elif a_target <= 0:
-    if lead_idx is not None:
+    if lead_idx is not None or e2e_active:
       v_target = min(v_cruise, v_traj if v_traj < v_ego else max(v_plan, v_ego))
     else:
       v_target = v_cruise
   else:
     eco_headroom = ECO_HEADROOM.get(eco, ECO_HEADROOM[1])
     v_target = min(v_cruise, v_ego + eco_headroom)
-    if lead_idx is not None:
+    if lead_idx is not None or e2e_active:
       if v_traj < v_ego:
         v_target = min(v_target, v_traj)
       else:

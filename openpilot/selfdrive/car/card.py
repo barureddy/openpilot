@@ -20,6 +20,7 @@ from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
+from openpilot.selfdrive.controls.lib.jvepilot import jve_supported
 
 REPLAY = "REPLAY" in os.environ
 
@@ -151,11 +152,14 @@ class Car:
 
     self.v_cruise_helper = VCruiseHelper(self.CP)
     # jvePilot toggle is only applied while disengaged so the tracked set speed can't jump mid-drive
+    self.jve_supported = jve_supported(self.CP)
     self.jve_acc_control_param = self.params.get_bool("JvePilotAccControl")
     self.v_cruise_helper.jve_acc_control = self.jve_acc_control_param
 
     self.is_metric = self.params.get_bool("IsMetric")
-    self.experimental_mode = self.params.get_bool("ExperimentalMode")
+    self.experimental_mode = self.params.get_bool("ExperimentalMode") and (
+      self.CP.openpilotLongitudinalControl or (self.jve_supported and self.jve_acc_control_param)
+    )
 
     # card is driven by can recv, expected at 100Hz
     self.rk = Ratekeeper(100, print_delay_threshold=None)
@@ -260,8 +264,10 @@ class Car:
   def params_thread(self, evt):
     while not evt.is_set():
       self.is_metric = self.params.get_bool("IsMetric")
-      self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.jve_acc_control_param = self.params.get_bool("JvePilotAccControl")
+      self.experimental_mode = self.params.get_bool("ExperimentalMode") and (
+        self.CP.openpilotLongitudinalControl or (self.jve_supported and self.jve_acc_control_param)
+      )
       time.sleep(0.1)
 
   def card_thread(self):

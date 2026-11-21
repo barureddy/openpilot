@@ -231,15 +231,25 @@ class TogglesLayout(Widget):
     )
 
     if ui_state.CP is not None:
+      jve_enabled = self._jve_available() and self._params.get_bool("JvePilotAccControl")
       if ui_state.has_longitudinal_control:
         self._toggles["ExperimentalMode"].action_item.set_enabled(True)
         self._toggles["ExperimentalMode"].set_description(e2e_description)
+        self._long_personality_setting.action_item.set_enabled(True)
+      elif jve_enabled:
+        self._toggles["ExperimentalMode"].action_item.set_enabled(True)
+        jve_e2e_desc = tr(
+          "jvePilot hybrid ACC mode: the driving model modulates your stock ACC set speed for curves, " +
+          "intersections, and traffic (down to the car's 20 mph / 32 km/h minimum ACC set speed; " +
+          "full braking to 0 mph requires a radar-tracked lead vehicle)."
+        )
+        self._toggles["ExperimentalMode"].set_description("<b>" + jve_e2e_desc + "</b><br><br>" + e2e_description)
         self._long_personality_setting.action_item.set_enabled(True)
       else:
         # no long for now
         self._toggles["ExperimentalMode"].action_item.set_enabled(False)
         self._toggles["ExperimentalMode"].action_item.set_state(False)
-        self._long_personality_setting.action_item.set_enabled(self._jve_available() and self._params.get_bool("JvePilotAccControl"))
+        self._long_personality_setting.action_item.set_enabled(False)
         self._params.remove("ExperimentalMode")
 
         unavailable = tr("Experimental mode is currently unavailable on this car since the car's stock ACC is used for longitudinal control.")

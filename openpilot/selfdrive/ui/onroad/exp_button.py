@@ -1,6 +1,7 @@
 import time
 import pyray as rl
 from openpilot.common.params import Params
+from openpilot.selfdrive.controls.lib.jvepilot import jve_supported
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import Widget
@@ -66,5 +67,6 @@ class ExpButton(Widget):
     if not self._params.get_bool("ExperimentalModeConfirmed"):
       return False
 
-    # Mirror exp mode toggle using persistent car params
-    return ui_state.has_longitudinal_control
+    # Mirror exp mode toggle using persistent car params (also allow for jvePilot hybrid ACC)
+    jve_long = ui_state.CP is not None and jve_supported(ui_state.CP) and self._params.get_bool("JvePilotAccControl")
+    return ui_state.has_longitudinal_control or jve_long
