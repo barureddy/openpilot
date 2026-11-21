@@ -91,11 +91,19 @@ def get_jve_target_speed(CS, long_plan, model_v2, eco: int, acc_braking: bool, r
   elif v_plan >= v_cruise - 0.5 and v_ego >= v_cruise - 2.0:
     v_target = v_cruise
   elif a_target <= 0:
-    v_target = min(v_cruise, v_plan) if lead_idx is not None else v_cruise
-  else:
-    v_target = min(v_cruise, v_ego + ECO_HEADROOM.get(eco, ECO_HEADROOM[1]))
     if lead_idx is not None:
-      v_target = min(v_target, v_traj)
+      v_target = min(v_cruise, v_traj if v_traj < v_ego else max(v_plan, v_ego))
+    else:
+      v_target = v_cruise
+  else:
+    eco_headroom = ECO_HEADROOM.get(eco, ECO_HEADROOM[1])
+    v_target = min(v_cruise, v_ego + eco_headroom)
+    if lead_idx is not None:
+      if v_traj < v_ego:
+        v_target = min(v_target, v_traj)
+      else:
+        v_lead_headroom = max(v_traj, v_ego + min(eco_headroom, max(a_target * 3.5, 1.5)))
+        v_target = min(v_target, v_lead_headroom)
 
   # Don't lower the stock ACC set speed for a low-confidence (possibly phantom) lead unless radar confirms one.
   if lead_idx is not None and not radar_lead:

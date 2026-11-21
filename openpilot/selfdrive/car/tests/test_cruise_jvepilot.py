@@ -164,20 +164,31 @@ def test_set_minus_engage_on_rising_edge_and_delayed_hud():
   assert abs(v_kph - 72) < 0.1
 
 
-def test_driver_set_plus_syncs_to_car_hud_when_max_was_higher():
-  # SEG5 scenario: comma vCruise was at 65 mph while Jeep dashboard ACC_HUD was at 55 mph;
-  # when driver holds SET+ and Jeep dashboard steps 55 -> 56 -> 60 mph, comma vCruise must sync to 60 mph (not 70 mph)
+def test_driver_set_plus_never_drops_max_when_car_hud_is_lower():
+  # When jvePilot lowered Jeep dashboard ACC_HUD (55 mph) below driver max (65 mph), pressing or holding
+  # RES+/SET+ while DASM steps 55 -> 56 -> 60 mph must raise driver max from 65 mph, never pull it down.
   d = JveDriver(chrysler_cp())
   d.engage(65 * CV.MPH_TO_KPH)
   for _ in range(5):
     d.step(cs(55 * CV.MPH_TO_KPH), enabled=True)
+
+  # Short tap while DASM steps 55 -> 56 mph: 65 -> 66 mph
   press, release = tap(ButtonType.accelCruise)
   d.step(cs(55 * CV.MPH_TO_KPH, buttons=press), enabled=True)
   for _ in range(8):
     d.step(cs(55 * CV.MPH_TO_KPH), enabled=True)
   d.step(cs(56 * CV.MPH_TO_KPH), enabled=True)
-  for _ in range(20):
+  v_kph = d.step(cs(56 * CV.MPH_TO_KPH, buttons=release), enabled=True)
+  assert round(v_kph * CV.KPH_TO_MPH) == 66
+
+  # Long hold across 50 frames while DASM steps 55 -> 56 -> 60 mph: 66 -> 70 mph
+  d.step(cs(55 * CV.MPH_TO_KPH, buttons=press), enabled=True)
+  for _ in range(10):
+    d.step(cs(55 * CV.MPH_TO_KPH), enabled=True)
+  v_hold = d.step(cs(56 * CV.MPH_TO_KPH), enabled=True)
+  assert round(v_hold * CV.KPH_TO_MPH) == 66
+  for _ in range(39):
     d.step(cs(56 * CV.MPH_TO_KPH), enabled=True)
-  v_kph = d.step(cs(60 * CV.MPH_TO_KPH, buttons=release), enabled=True)
-  assert round(v_kph * CV.KPH_TO_MPH) == 60
-  assert round(d.h.v_cruise_cluster_kph * CV.KPH_TO_MPH) == 60
+  v_long = d.step(cs(60 * CV.MPH_TO_KPH, buttons=release), enabled=True)
+  assert round(v_long * CV.KPH_TO_MPH) == 70
+  assert round(d.h.v_cruise_cluster_kph * CV.KPH_TO_MPH) == 70

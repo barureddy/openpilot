@@ -109,13 +109,14 @@ class VCruiseHelper:
               self.v_cruise_kph = car_v_cruise_kph
               self.jve_button_synced = True
             elif (self.jve_driver_btn_type in (ButtonType.accelCruise, ButtonType.resumeCruise) and
-                  car_v_cruise_kph > self.jve_car_speed_prev):
+                  car_v_cruise_kph > self.v_cruise_kph):
               self.v_cruise_kph = car_v_cruise_kph
               self.jve_button_synced = True
 
           if not self.jve_button_synced:
             self._update_v_cruise_non_pcm(CS, enabled, is_metric)
-          if (car_v_cruise_kph > self.v_cruise_kph + 1.0 and
+          if (self.jve_driver_btn_frames > 0 and
+              car_v_cruise_kph > self.v_cruise_kph + 1.0 and
               self.jve_driver_btn_type not in (ButtonType.decelCruise, ButtonType.setCruise) and
               self.button_timers[ButtonType.decelCruise] == 0):
             self.v_cruise_kph = car_v_cruise_kph
@@ -197,7 +198,7 @@ class VCruiseHelper:
           new_mph = cur_mph + 5 * CRUISE_INTERVAL_SIGN[button_type]
       else:
         new_mph = cur_mph + CRUISE_INTERVAL_SIGN[button_type]
-      self.v_cruise_kph = float(round(new_mph * CV.MPH_TO_KPH))
+      self.v_cruise_kph = float(round(new_mph * CV.MPH_TO_KPH, 1))
     else:
       v_cruise_delta = v_cruise_delta * (5 if long_press else 1)
       if long_press and self.v_cruise_kph % v_cruise_delta != 0:  # partial interval

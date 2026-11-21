@@ -106,7 +106,7 @@ class LongitudinalPlanner:
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
     v_cruise = v_cruise_kph * CV.KPH_TO_MS
-    cc_jve_active = (sm['carControl'].actuators.speed > 0) if sm.seen['carControl'] else self.jve_acc_control
+    cc_jve_active = (sm['carControl'].actuators.speed > 0) if (hasattr(sm, 'seen') and sm.seen['carControl']) else self.jve_acc_control
     jve_active = self.jve_supported and cc_jve_active
     if jve_active and not sm['selfdriveState'].experimentalMode:
       v_cruise = min(v_cruise, get_turn_speed_limit(sm['modelV2'], v_ego, self.jve_slow_in_turns))
@@ -123,7 +123,7 @@ class LongitudinalPlanner:
 
     throttle_probs = sm['modelV2'].meta.disengagePredictions.gasPressProbs
     throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.0
-    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED or jve_active
 
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['vehicleParameters'].angleOffsetDeg
 

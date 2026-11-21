@@ -154,6 +154,71 @@ def test_should_stop_and_hard_braking_return_positive_target():
   assert v_hard_brake == JVE_MIN_TARGET_SPEED
 
 
+def test_lead_pull_away_receives_set_speed_headroom():
+  # Nov 21 Seg 27 scenario: lead accelerating away (vEgo=16.1 m/s, v_traj=16.2 m/s, a_target=+0.45 m/s^2);
+  # set-speed target must get headroom above v_ego instead of clamping to v_traj (+0.1 m/s) and starving stock ACC.
+  v = get_jve_target_speed(*_inputs(v_ego=16.1, v_cruise_kph=112.7, acc_set_kph=58.0, a_target=0.45,
+                                    plan_v=16.2, source="lead0", lead_probs=(0.9,)), eco=1, acc_braking=True)
+  assert abs(v - (16.1 + 0.45 * 3.5)) < 1e-3
+
+  # Mild negative a_target (-0.01) while lead is moving with us (v_traj >= v_ego) must not command below v_ego
+  v_steady = get_jve_target_speed(*_inputs(v_ego=22.7, v_cruise_kph=112.7, acc_set_kph=80.0, a_target=-0.01,
+                                           plan_v=22.8, source="lead0", lead_probs=(0.9,)), eco=1, acc_braking=True)
+  assert v_steady >= 22.7
+
+
+def test_longitudinal_planner_keeps_allow_throttle_for_jve_active():
+  import sys
+  from types import SimpleNamespace
+  import numpy as np
+  sys.modules.setdefault("setproctitle", SimpleNamespace(getproctitle=lambda: "", setproctitle=lambda _: None))
+  try:
+    import casadi  # noqa: F401
+  except ModuleNotFoundError:
+    class _DummyMpc:
+      def __init__(self, dt=0.05):
+        self.v_solution = np.full(13, 20.0)
+        self.a_solution = np.zeros(13)
+        self.j_solution = np.zeros(12)
+        self.crash_cnt = 0
+        self.source = log.LongitudinalPlan.LongitudinalPlanSource.cruise
+        self.solve_time = 0.0
+      def set_weights(self, *args, **kwargs): pass
+      def set_cur_state(self, *args, **kwargs): pass
+      def update(self, *args, **kwargs): pass
+    sys.modules.setdefault(
+      "openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc",
+      SimpleNamespace(LongitudinalMpc=_DummyMpc, LongitudinalPlanSource=log.LongitudinalPlan.LongitudinalPlanSource,
+                      T_IDXS=np.linspace(0.0, 10.0, 13)),
+    )
+  from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
+
+  CP = car.CarParams(brand="chrysler", pcmCruise=True, openpilotLongitudinalControl=False,
+                     steerRatio=16.0, wheelbase=2.7, longitudinalActuatorDelay=0.5)
+  planner = LongitudinalPlanner(CP)
+  planner.jve_acc_control = True
+
+  model = log.ModelDataV2.new_message()
+  model.meta.disengagePredictions.gasPressProbs = [0.0, 0.05]
+
+  class MockSM(dict):
+    def __init__(self, data, seen):
+      super().__init__(data)
+      self.seen = seen
+
+  sm = MockSM({
+    "carControl": car.CarControl(actuators={"speed": 20.0}, orientationNED=[0.0, 0.0, 0.0]).as_reader(),
+    "carState": car.CarState(vEgo=20.0, vCruise=80.0).as_reader(),
+    "controlsState": log.ControlsState.new_message().as_reader(),
+    "selfdriveState": log.SelfdriveState.new_message(enabled=True).as_reader(),
+    "vehicleParameters": log.VehicleParameters.new_message().as_reader(),
+    "radarState": log.RadarState.new_message().as_reader(),
+    "modelV2": model.as_reader(),
+  }, {"carControl": True})
+  planner.update(sm)
+  assert planner.allow_throttle is True
+
+
 def test_desire_helper_aborts_lane_change_on_blindspot():
   import sys
   from types import SimpleNamespace
